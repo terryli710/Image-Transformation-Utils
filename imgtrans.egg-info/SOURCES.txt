@@ -1,0 +1,7 @@
+README.md
+setup.py
+imgtrans.egg-info/PKG-INFO
+imgtrans.egg-info/SOURCES.txt
+imgtrans.egg-info/dependency_links.txt
+imgtrans.egg-info/requires.txt
+imgtrans.egg-info/top_level.txt
