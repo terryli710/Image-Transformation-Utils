@@ -1,11 +1,11 @@
-# affine transformation
+# affine transformation, from monai
 
-import numpy as np
-from scipy import ndimage
+import torch
 from typing import Union, Sequence, Optional, Callable, List
 from imgtrans.utils.misc import ensure_tuple, ensure_tuple_size
-from .utils.randomize import RandParams
-
+from torch.nn.functional import grid_sample
+from .utils.grid_utils import create_grid
+from .utils.type_utils import convert_tenor_dtype, convert_to_dst_type
 
 
 class Affine:
@@ -17,7 +17,9 @@ class Affine:
         shear_params: Optional[Union[Sequence[float], float]] = None,
         translate_params: Optional[Union[Sequence[float], float]] = None,
         scale_params: Optional[Union[Sequence[float], float]] = 1.0,
+        mode: str = 'bilinear',
         padding_mode: str = "reflect",
+        device: Optional[str] = None,
         image_only: bool = False,
     ):
         """
@@ -54,20 +56,27 @@ class Affine:
             translate=translate_params,
             scale=scale_params,
         )
+        self.mode = mode
+        self.padding_mode = padding_mode
+        self.device = device
+        self.resampler = Resample(mode=mode,
+                                  padding_mode=padding_mode,
+                                  device=device)
         self.image_only = image_only
-        self.padding_mode: padding_mode
         pass
 
     def __call__(
         self,
-        img: np.ndarray,
+        img: torch.Tensor,
         spatial_dims=None,
         rotate_params: Optional[Union[Sequence[float], float]] = None,
         shear_params: Optional[Union[Sequence[float], float]] = None,
         translate_params: Optional[Union[Sequence[float], float]] = None,
         scale_params: Optional[Union[Sequence[float], float]] = None,
+        mode: Optional[str] = None,
         padding_mode: Optional[str] = None,
     ):
+        # create aff_mtx
         if any([
                 p is not None for p in
             [rotate_params, shear_params, translate_params, scale_params]
@@ -87,12 +96,26 @@ class Affine:
             )
         else:
             aff_mtx = self.aff_mtx
-        trans_img = ndimage.affine_transform(
-            img,
-            aff_mtx,
-            mode=padding_mode if padding_mode else self.padding_mode)
+        # get grid
+        spatial_size = img.shape
+        grid = create_grid(spatial_size, device=self.device)
+        grid, *_ = convert_tenor_dtype(grid,
+                                       torch.Tensor,
+                                       device=self.device,
+                                       dtype=float)
+        affine, *_ = convert_to_dst_type(aff_mtx, grid)
+        grid = (aff_mtx @ grid.reshape(
+            (grid.shape[0], -1))).reshape([-1] + list(grid.shape[1:]))
+
+        trans_img = self.resampler(img,
+                                   grid=grid,
+                                   mode=mode or self.mode,
+                                   padding_mode=padding_mode
+                                   or self.padding_mode)
+
         return trans_img if self.image_only else trans_img, {
-            "aff_mtx": aff_mtx
+            "aff_mtx": aff_mtx,
+            "grid": grid
         }
 
     def _get_aff_mtx(
@@ -131,7 +154,7 @@ class Affine:
         # _b = "torch" if isinstance(grid, torch.Tensor) else "numpy"
         # _device = grid.device if isinstance(grid, torch.Tensor) else self.device
 
-        affine = np.eye(spatial_dims + 1)
+        affine = torch.eye(spatial_dims + 1)
         if rotate:
             affine = affine @ create_rotate(spatial_dims, rotate)
         if shear:
@@ -144,77 +167,85 @@ class Affine:
         return affine
 
 
-class RandAffine(Affine, RandParams):
+class Resample:
 
-    def __init__(self,
-                 spatial_dims=None,
-                 rotate_range=None,
-                 shear_range=None,
-                 translate_range=None,
-                 scale_range=None,
-                 padding_mode="reflect",
-                 image_only: bool = False,
-                 seed=None):
+    def __init__(
+        self,
+        mode: str = "bilinear",
+        padding_mode: str = "reflection",
+        device: Optional[torch.device] = None,
+    ):
+        """
+        computes output image using values from `img`, locations from `grid` using pytorch.
+        supports spatially 2D or 3D (num_channels, H, W[, D]).
 
-        Affine.__init__(self,
-                        spatial_dims=spatial_dims,
-                        padding_mode=padding_mode,
-                        image_only=image_only)
-        RandParams.__init__(self, seed=seed)
-        self.spatial_dims = spatial_dims
-        self.rotate_range = rotate_range
-        self.shear_range = shear_range
-        self.translate_range = translate_range
-        self.scale_range = scale_range
-        pass
+        Args:
+            mode: {``"bilinear"``, ``"nearest"``}
+                Interpolation mode to calculate output values. Defaults to ``"bilinear"``.
+                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
+            padding_mode: {``"zeros"``, ``"border"``, ``"reflection"``}
+                Padding mode for outside grid values. Defaults to ``"border"``.
+                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
+            as_tensor_output: whether to return a torch tensor. Defaults to False.
+            device: device on which the tensor will be allocated.
+        """
+        self.mode = mode
+        self.padding_mode = padding_mode
+        self.device = device
 
-    def randomize(self, spatial_dims=2, seed=None):
-        if seed:
-            self.set_random_state(seed)
-        if spatial_dims == 2:
-            params = {
-                "rotate":
-                self.get_randparam(self.rotate_range, dim=2),
-                "shear":
-                self.get_randparam(self.shear_range, dim=2),
-                "translate":
-                self.get_randparam(self.translate_range, dim=2),
-                "scale":
-                self.get_randparam(self.scale_range, dim=2, abs=True),
-            }
-        elif spatial_dims == 3:
-            params = {
-                "rotate":
-                self.get_randparam(self.rotate_range, dim=3),
-                "shear":
-                self.get_randparam(self.shear_range, dim=6),
-                "translate":
-                self.get_randparam(self.translate_range, dim=3),
-                "scale":
-                self.get_randparam(self.scale_range, dim=3, abs=True),
-            }
-        else:
-            raise NotImplementedError
-        return params
+    def __call__(
+        self,
+        img: torch.Tensor,
+        grid: Optional[torch.Tensor] = None,
+        mode: Optional[str] = None,
+        padding_mode: Optional[str] = None,
+    ):  # -> Union[np.ndarray, torch.Tensor]:
+        """
+        Args:
+            img: shape must be (num_channels, H, W[, D]).
+            grid: shape must be (3, H, W) for 2D or (4, H, W, D) for 3D.
+            mode: {``"bilinear"``, ``"nearest"``}
+                Interpolation mode to calculate output values. Defaults to ``self.mode``.
+                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
+            padding_mode: {``"zeros"``, ``"border"``, ``"reflection"``}
+                Padding mode for outside grid values. Defaults to ``self.padding_mode``.
+                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
+        """
 
-    def __call__(self, img: np.ndarray, padding_mode="reflect", seed=None):
-        spatial_dims = self.spatial_dims if self.spatial_dims else len(img.shape)
-        params = self.randomize(spatial_dims=spatial_dims, seed=seed)
-        aff_mtx = self._get_aff_mtx(spatial_dims=spatial_dims, **params)
-        trans_img = ndimage.affine_transform(
-            img,
-            aff_mtx,
-            mode=padding_mode if padding_mode else self.padding_mode)
-        return trans_img if self.image_only else trans_img, {
-            "aff_mtx": aff_mtx,
-            "params": params,
-        }
+        assert isinstance(
+            img, torch.Tensor), "input img must be supplied as a torch.Tensor"
+        assert isinstance(
+            grid, torch.Tensor
+        ), "Error, grid argument must be supplied as a torch.Tensor"
+
+        grid = (torch.tensor(grid) if not isinstance(grid, torch.Tensor) else
+                grid.detach().clone())
+        if self.device:
+            img = img.to(self.device)
+            grid = grid.to(self.device)
+
+        for i, dim in enumerate(img.shape[1:]):
+            grid[i] = 2.0 * grid[i] / (dim - 1.0)
+        grid = grid[:-1] / grid[-1:]
+        index_ordering: List[int] = list(range(img.ndimension() - 2, -1, -1))
+        grid = grid[index_ordering]
+        grid = grid.permute(list(range(grid.ndimension()))[1:] + [0])
+        out = grid_sample(
+            img.unsqueeze(0).float(),
+            grid.unsqueeze(0).float(),
+            mode=self.mode.value if mode is None else mode,
+            padding_mode=self.padding_mode.value
+            if padding_mode is None else padding_mode,
+            align_corners=
+            False,  # NOTE: guess not much difference: https://discuss.pytorch.org/t/what-we-should-use-align-corners-false/22663/9
+        )[0]
+        return torch.as_tensor(out)
 
 
 def create_rotate(
     spatial_dims: int,
     radians: Union[Sequence[float], float],
-    backend="numpy",
+    device: Optional[torch.device] = None,
 ):
     """
     create a 2D or 3D rotation matrix
@@ -224,25 +255,31 @@ def create_rotate(
         radians: rotation radians
             when spatial_dims == 3, the `radians` sequence corresponds to
             rotation in the 1st, 2nd, and 3rd dim respectively.
+        device: device to compute and store the output (when the backend is "torch").
+        
 
     Raises:
         ValueError: When ``radians`` is empty.
         ValueError: When ``spatial_dims`` is not one of [2, 3].
 
     """
-    return _create_rotate(spatial_dims=spatial_dims,
-                          radians=radians,
-                          sin_func=np.sin,
-                          cos_func=np.cos,
-                          eye_func=np.eye)
+    return _create_rotate(
+        spatial_dims=spatial_dims,
+        radians=radians,
+        sin_func=lambda th: torch.sin(
+            torch.as_tensor(th, dtype=torch.float32, device=device)),
+        cos_func=lambda th: torch.cos(
+            torch.as_tensor(th, dtype=torch.float32, device=device)),
+        eye_func=lambda rank: torch.eye(rank, device=device),
+    )
 
 
 def _create_rotate(
     spatial_dims: int,
     radians: Union[Sequence[float], float],
-    sin_func: Callable = np.sin,
-    cos_func: Callable = np.cos,
-    eye_func: Callable = np.eye,
+    sin_func: Callable,
+    cos_func: Callable,
+    eye_func: Callable,
 ):
     radians = ensure_tuple(radians)
     if spatial_dims == 2:
@@ -289,6 +326,7 @@ def _create_rotate(
 def create_shear(
     spatial_dims: int,
     coefs: Union[Sequence[float], float],
+    device: Optional[torch.device] = None,
 ):
     """
     create a shearing matrix
@@ -306,7 +344,7 @@ def create_shear(
                 ]
 
         device: device to compute and store the output (when the backend is "torch").
-        backend: APIs to use, ``numpy`` or ``torch``.
+        
 
     Raises:
         NotImplementedError: When ``spatial_dims`` is not one of [2, 3].
@@ -314,12 +352,13 @@ def create_shear(
     """
     return _create_shear(spatial_dims=spatial_dims,
                          coefs=coefs,
-                         eye_func=np.eye)
+                         eye_func=lambda rank: torch.eye(rank, device=device))
 
 
-def _create_shear(spatial_dims: int,
-                  coefs: Union[Sequence[float], float],
-                  eye_func=np.eye):
+def _create_shear(
+    spatial_dims: int,
+    coefs: Union[Sequence[float], float],
+    eye_func: Callable,):
     if spatial_dims == 2:
         coefs = ensure_tuple_size(coefs, dim=2, pad_val=0.0)
         out = eye_func(3)
@@ -339,6 +378,7 @@ def _create_shear(spatial_dims: int,
 def create_scale(
     spatial_dims: int,
     scaling_factor: Union[Sequence[float], float],
+    device: Optional[torch.device] = None,
 ):
     """
     create a scaling matrix
@@ -347,16 +387,19 @@ def create_scale(
         spatial_dims: spatial rank
         scaling_factor: scaling factors for every spatial dim, defaults to 1.
         device: device to compute and store the output (when the backend is "torch").
-        backend: APIs to use, ``numpy`` or ``torch``.
+        
     """
-    return _create_scale(spatial_dims=spatial_dims,
-                         scaling_factor=scaling_factor,
-                         array_func=np.diag)
+
+    return _create_scale(
+        spatial_dims=spatial_dims,
+        scaling_factor=scaling_factor,
+        array_func=lambda x: torch.diag(torch.as_tensor(x, device=device)),
+    )
 
 
-def _create_scale(spatial_dims: int,
-                  scaling_factor: Union[Sequence[float], float],
-                  array_func=np.diag):
+def _create_scale(spatial_dims: int, scaling_factor: Union[Sequence[float],
+                                                           float],
+                  array_func: Callable):
     scaling_factor = ensure_tuple_size(scaling_factor,
                                        dim=spatial_dims,
                                        pad_val=1.0)
@@ -366,6 +409,7 @@ def _create_scale(spatial_dims: int,
 def create_translate(
     spatial_dims: int,
     shift: Union[Sequence[float], float],
+    device: Optional[torch.device] = None,
 ):
     """
     create a translation matrix
@@ -374,21 +418,21 @@ def create_translate(
         spatial_dims: spatial rank
         shift: translate pixel/voxel for every spatial dim, defaults to 0.
         device: device to compute and store the output (when the backend is "torch").
-        backend: APIs to use, ``numpy`` or ``torch``.
+        
     """
-    return _create_translate(spatial_dims=spatial_dims,
-                             shift=shift,
-                             eye_func=np.eye,
-                             array_func=np.asarray)
+    return _create_translate(
+        spatial_dims=spatial_dims,
+        shift=shift,
+        eye_func=lambda x: torch.eye(torch.as_tensor(x), device=device
+                                     ),  # type: ignore
+        array_func=lambda x: torch.as_tensor(x, device=device),  # type: ignore
+    )
 
 
-def _create_translate(spatial_dims: int,
-                      shift: Union[Sequence[float], float],
-                      eye_func=np.eye,
-                      array_func=np.asarray):
+def _create_translate(spatial_dims: int, shift: Union[Sequence[float], float],
+                      eye_func: Callable, array_func: Callable):
     shift = ensure_tuple(shift)
     affine = eye_func(spatial_dims + 1)
     for i, a in enumerate(shift[:spatial_dims]):
         affine[i, spatial_dims] = a
     return array_func(affine)  # type: ignore
-
