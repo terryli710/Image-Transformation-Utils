@@ -1,5 +1,5 @@
 # import backend
-from .utils import get_backend
+from .utils.backend import get_backend
 
 backend = get_backend()
 
@@ -9,7 +9,7 @@ if backend == "tensorflow":
     except ImportError:
         raise ImportError('cannot import backend tensorflow')
 
-    from .np import affine
+    from .np import affine, elastic
 
 elif backend == "pytorch":
     try:
@@ -17,7 +17,7 @@ elif backend == "pytorch":
     except torch:
         raise ImportError('cannot import backend torch')
 
-    from .torch import affine
+    from .torch import affine, elastic, svf, perlin
 
 else:
     from .np import affine

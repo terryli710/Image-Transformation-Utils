@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union, DtypeLike
+from typing import Any, Optional
 import torch
 
 
@@ -48,7 +48,7 @@ def convert_tenor_dtype(data,
 
 def convert_to_dst_type(src: Any,
                         dst: torch.Tensor,
-                        dtype: Optional[Union[DtypeLike, torch.dtype]] = None,
+                        dtype: Optional[torch.dtype] = None,
                         wrap_sequence: bool = False):
     """
     Convert source data to the same data type and device as the destination data.

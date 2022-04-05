@@ -197,7 +197,10 @@ class RandAffine(Affine, RandParams):
             raise NotImplementedError
         return params
 
-    def __call__(self, img: np.ndarray, padding_mode="reflect", seed=None):
+    def __call__(self, 
+                 img: np.ndarray, 
+                 padding_mode="reflect", 
+                 seed=None):
         spatial_dims = self.spatial_dims if self.spatial_dims else len(img.shape)
         params = self.randomize(spatial_dims=spatial_dims, seed=seed)
         aff_mtx = self._get_aff_mtx(spatial_dims=spatial_dims, **params)
@@ -332,8 +335,7 @@ def _create_shear(spatial_dims: int,
         out[1, 0], out[1, 2] = coefs[2], coefs[3]
         out[2, 0], out[2, 1] = coefs[4], coefs[5]
         return out  # type: ignore
-    raise NotImplementedError(
-        "Currently only spatial_dims in [2, 3] are supported.")
+    raise NotImplementedError("Currently only spatial_dims in [2, 3] are supported.")
 
 
 def create_scale(

@@ -3,9 +3,9 @@
 import torch
 from typing import Union, Sequence, Optional, Callable, List
 from imgtrans.utils.misc import ensure_tuple, ensure_tuple_size
-from torch.nn.functional import grid_sample
-from .utils.grid_utils import create_grid
+from .utils.grid_utils import create_grid, Resample
 from .utils.type_utils import convert_tenor_dtype, convert_to_dst_type
+from .utils.randomize import RandParams
 
 
 class Affine:
@@ -13,14 +13,13 @@ class Affine:
     def __init__(
         self,
         spatial_dims=None,
-        rotate_params: Optional[Union[Sequence[float], float]] = None,
-        shear_params: Optional[Union[Sequence[float], float]] = None,
-        translate_params: Optional[Union[Sequence[float], float]] = None,
-        scale_params: Optional[Union[Sequence[float], float]] = 1.0,
+        rotate: Optional[Union[Sequence[float], float]] = None,
+        shear: Optional[Union[Sequence[float], float]] = None,
+        translate: Optional[Union[Sequence[float], float]] = None,
+        scale: Optional[Union[Sequence[float], float]] = 1.0,
         mode: str = 'bilinear',
         padding_mode: str = "reflect",
         device: Optional[str] = None,
-        image_only: bool = False,
     ):
         """
         The affine transformations are applied in rotate, shear, translate, scale order.
@@ -51,10 +50,10 @@ class Affine:
 
         self.aff_mtx = self._get_aff_mtx(
             spatial_dims=2,
-            rotate=rotate_params,
-            shear=shear_params,
-            translate=translate_params,
-            scale=scale_params,
+            rotate=rotate,
+            shear=shear,
+            translate=translate,
+            scale=scale,
         )
         self.mode = mode
         self.padding_mode = padding_mode
@@ -62,48 +61,57 @@ class Affine:
         self.resampler = Resample(mode=mode,
                                   padding_mode=padding_mode,
                                   device=device)
-        self.image_only = image_only
         pass
 
     def __call__(
         self,
         img: torch.Tensor,
         spatial_dims=None,
-        rotate_params: Optional[Union[Sequence[float], float]] = None,
-        shear_params: Optional[Union[Sequence[float], float]] = None,
-        translate_params: Optional[Union[Sequence[float], float]] = None,
-        scale_params: Optional[Union[Sequence[float], float]] = None,
+        rotate: Optional[Union[Sequence[float], float]] = None,
+        shear: Optional[Union[Sequence[float], float]] = None,
+        translate: Optional[Union[Sequence[float], float]] = None,
+        scale: Optional[Union[Sequence[float], float]] = None,
         mode: Optional[str] = None,
         padding_mode: Optional[str] = None,
     ):
+        """_summary_
+
+        Args:
+            img (torch.Tensor): shape = (n_channel/B, H, W (,D))
+            spatial_dims (array like, optional): spatial dimentions of the image. Defaults to len(img.shape[1:]).
+            other params please refer to _get_aff_mtx
+
+        Returns:
+            tuple: img, {dict of params}
+        """
         # create aff_mtx
         if any([
                 p is not None for p in
-            [rotate_params, shear_params, translate_params, scale_params]
+            [rotate, shear, translate, scale]
         ]):
 
             aff_mtx = self._get_aff_mtx(
                 spatial_dims=spatial_dims
-                if spatial_dims is not None else len(img.shape),
-                rotate=rotate_params
-                if rotate_params is not None else self.rotate_params,
-                shear=shear_params
-                if shear_params is not None else self.shear_params,
-                translate=translate_params
-                if translate_params is not None else self.translate_params,
-                scale=scale_params
-                if scale_params is not None else self.scale_params,
+                if spatial_dims is not None else len(img.shape[1:]),
+                rotate=rotate
+                if rotate is not None else self.rotate,
+                shear=shear
+                if shear is not None else self.shear,
+                translate=translate
+                if translate is not None else self.translate,
+                scale=scale
+                if scale is not None else self.scale,
             )
         else:
             aff_mtx = self.aff_mtx
+
         # get grid
-        spatial_size = img.shape
+        spatial_size = img.shape[1:]
         grid = create_grid(spatial_size, device=self.device)
-        grid, *_ = convert_tenor_dtype(grid,
-                                       torch.Tensor,
-                                       device=self.device,
-                                       dtype=float)
-        affine, *_ = convert_to_dst_type(aff_mtx, grid)
+        grid = convert_tenor_dtype(grid, device=self.device, dtype=float)
+
+        aff_mtx = convert_to_dst_type(aff_mtx, grid)
+
         grid = (aff_mtx @ grid.reshape(
             (grid.shape[0], -1))).reshape([-1] + list(grid.shape[1:]))
 
@@ -113,9 +121,9 @@ class Affine:
                                    padding_mode=padding_mode
                                    or self.padding_mode)
 
-        return trans_img if self.image_only else trans_img, {
+        return trans_img, {
             "aff_mtx": aff_mtx,
-            "grid": grid
+            "grid": grid,
         }
 
     def _get_aff_mtx(
@@ -167,79 +175,72 @@ class Affine:
         return affine
 
 
-class Resample:
+class RandAffine(Affine, RandParams):
 
-    def __init__(
-        self,
-        mode: str = "bilinear",
-        padding_mode: str = "reflection",
-        device: Optional[torch.device] = None,
-    ):
-        """
-        computes output image using values from `img`, locations from `grid` using pytorch.
-        supports spatially 2D or 3D (num_channels, H, W[, D]).
+    def __init__(self,
+                 spatial_dims=None,
+                 rotate_range=None,
+                 shear_range=None,
+                 translate_range=None,
+                 scale_range=None,
+                 padding_mode="reflect",
+                 seed=None):
 
-        Args:
-            mode: {``"bilinear"``, ``"nearest"``}
-                Interpolation mode to calculate output values. Defaults to ``"bilinear"``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-            padding_mode: {``"zeros"``, ``"border"``, ``"reflection"``}
-                Padding mode for outside grid values. Defaults to ``"border"``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-            as_tensor_output: whether to return a torch tensor. Defaults to False.
-            device: device on which the tensor will be allocated.
-        """
-        self.mode = mode
-        self.padding_mode = padding_mode
-        self.device = device
+        Affine.__init__(self,
+                        spatial_dims=spatial_dims,
+                        padding_mode=padding_mode,)
+        RandParams.__init__(self, seed=seed)
+        self.spatial_dims = spatial_dims
+        self.rotate_range = rotate_range
+        self.shear_range = shear_range
+        self.translate_range = translate_range
+        self.scale_range = scale_range
+        pass
 
-    def __call__(
-        self,
-        img: torch.Tensor,
-        grid: Optional[torch.Tensor] = None,
-        mode: Optional[str] = None,
-        padding_mode: Optional[str] = None,
-    ):  # -> Union[np.ndarray, torch.Tensor]:
-        """
-        Args:
-            img: shape must be (num_channels, H, W[, D]).
-            grid: shape must be (3, H, W) for 2D or (4, H, W, D) for 3D.
-            mode: {``"bilinear"``, ``"nearest"``}
-                Interpolation mode to calculate output values. Defaults to ``self.mode``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-            padding_mode: {``"zeros"``, ``"border"``, ``"reflection"``}
-                Padding mode for outside grid values. Defaults to ``self.padding_mode``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-        """
+    def randomize(self, spatial_dims=2, seed=None):
+        if seed:
+            self.set_random_state(seed)
+        if spatial_dims == 2:
+            params = {
+                "rotate": self.get_randparam(self.rotate_range, dim=2),
+                "shear": self.get_randparam(self.shear_range, dim=2),
+                "translate": self.get_randparam(self.translate_range, dim=2),
+                "scale": self.get_randparam(self.scale_range, dim=2, abs=True),
+            }
+        elif spatial_dims == 3:
+            params = {
+                "rotate": self.get_randparam(self.rotate_range, dim=3),
+                "shear": self.get_randparam(self.shear_range, dim=6),
+                "translate": self.get_randparam(self.translate_range, dim=3),
+                "scale": self.get_randparam(self.scale_range, dim=3, abs=True),
+            }
+        else:
+            raise NotImplementedError
+        return params
 
-        assert isinstance(
-            img, torch.Tensor), "input img must be supplied as a torch.Tensor"
-        assert isinstance(
-            grid, torch.Tensor
-        ), "Error, grid argument must be supplied as a torch.Tensor"
+    def __call__(self,
+                 img: torch.Tensor,
+                 mode: Optional[str] = None,
+                 padding_mode="reflection",
+                 seed=None):
 
-        grid = (torch.tensor(grid) if not isinstance(grid, torch.Tensor) else
-                grid.detach().clone())
-        if self.device:
-            img = img.to(self.device)
-            grid = grid.to(self.device)
+        spatial_dims = self.spatial_dims if self.spatial_dims else len(
+            img.shape[1:])
+        params = self.randomize(spatial_dims=spatial_dims, seed=seed)
 
-        for i, dim in enumerate(img.shape[1:]):
-            grid[i] = 2.0 * grid[i] / (dim - 1.0)
-        grid = grid[:-1] / grid[-1:]
-        index_ordering: List[int] = list(range(img.ndimension() - 2, -1, -1))
-        grid = grid[index_ordering]
-        grid = grid.permute(list(range(grid.ndimension()))[1:] + [0])
-        out = grid_sample(
-            img.unsqueeze(0).float(),
-            grid.unsqueeze(0).float(),
-            mode=self.mode.value if mode is None else mode,
-            padding_mode=self.padding_mode.value
-            if padding_mode is None else padding_mode,
-            align_corners=
-            False,  # NOTE: guess not much difference: https://discuss.pytorch.org/t/what-we-should-use-align-corners-false/22663/9
-        )[0]
-        return torch.as_tensor(out)
+        result = Affine.__call__(self,
+                                 img=img,
+                                 spatial_dims=spatial_dims,
+                                 mode=mode,
+                                 padding_mode=padding_mode,
+                                 **params)
+        if not self.image_only:
+            meta = result[1]
+            meta.update({"params":params})
+            result = (result[0], meta)
+
+        return result
+    
 
 
 def create_rotate(
@@ -358,7 +359,8 @@ def create_shear(
 def _create_shear(
     spatial_dims: int,
     coefs: Union[Sequence[float], float],
-    eye_func: Callable,):
+    eye_func: Callable,
+):
     if spatial_dims == 2:
         coefs = ensure_tuple_size(coefs, dim=2, pad_val=0.0)
         out = eye_func(3)
