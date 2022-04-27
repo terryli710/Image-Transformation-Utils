@@ -13,10 +13,10 @@ class Affine:
     def __init__(
         self,
         spatial_dims=None,
-        rotate_params: Optional[Union[Sequence[float], float]] = None,
-        shear_params: Optional[Union[Sequence[float], float]] = None,
-        translate_params: Optional[Union[Sequence[float], float]] = None,
-        scale_params: Optional[Union[Sequence[float], float]] = 1.0,
+        rotate: Optional[Union[Sequence[float], float]] = None,
+        shear: Optional[Union[Sequence[float], float]] = None,
+        translate: Optional[Union[Sequence[float], float]] = None,
+        scale: Optional[Union[Sequence[float], float]] = 1.0,
         padding_mode: str = "reflect",
         image_only: bool = False,
     ):
@@ -24,9 +24,9 @@ class Affine:
         The affine transformations are applied in rotate, shear, translate, scale order.
 
         Args:
-            rotate_params: a rotation angle in radians, a scalar for 2D image, a tuple of 3 floats for 3D.
+            rotate: a rotation angle in radians, a scalar for 2D image, a tuple of 3 floats for 3D.
                 Defaults to no rotation.
-            shear_params: shearing factors for affine matrix, take a 3D affine as example::
+            shear: shearing factors for affine matrix, take a 3D affine as example::
 
                 [
                     [1.0, params[0], params[1], 0.0],
@@ -36,9 +36,9 @@ class Affine:
                 ]
 
                 a tuple of 2 floats for 2D, a tuple of 6 floats for 3D. Defaults to no shearing.
-            translate_params: a tuple of 2 floats for 2D, a tuple of 3 floats for 3D. Translation is in
+            translate: a tuple of 2 floats for 2D, a tuple of 3 floats for 3D. Translation is in
                 pixel/voxel relative to the center of the input image. Defaults to no translation.
-            scale_params: scale factor for every spatial dims. a tuple of 2 floats for 2D,
+            scale: scale factor for every spatial dims. a tuple of 2 floats for 2D,
                 a tuple of 3 floats for 3D. Defaults to `1.0`.
             padding_mode: {‘reflect’, ‘grid-mirror’, ‘constant’, ‘grid-constant’, ‘nearest’, ‘mirror’, ‘grid-wrap’, ‘wrap’},
                 Padding mode for outside grid values. Defaults to ``"reflect"``.
@@ -49,10 +49,10 @@ class Affine:
 
         self.aff_mtx = self._get_aff_mtx(
             spatial_dims=2,
-            rotate=rotate_params,
-            shear=shear_params,
-            translate=translate_params,
-            scale=scale_params,
+            rotate=rotate,
+            shear=shear,
+            translate=translate,
+            scale=scale,
         )
         self.image_only = image_only
         self.padding_mode: padding_mode
@@ -62,28 +62,28 @@ class Affine:
         self,
         img: np.ndarray,
         spatial_dims=None,
-        rotate_params: Optional[Union[Sequence[float], float]] = None,
-        shear_params: Optional[Union[Sequence[float], float]] = None,
-        translate_params: Optional[Union[Sequence[float], float]] = None,
-        scale_params: Optional[Union[Sequence[float], float]] = None,
+        rotate: Optional[Union[Sequence[float], float]] = None,
+        shear: Optional[Union[Sequence[float], float]] = None,
+        translate: Optional[Union[Sequence[float], float]] = None,
+        scale: Optional[Union[Sequence[float], float]] = None,
         padding_mode: Optional[str] = None,
     ):
         if any([
                 p is not None for p in
-            [rotate_params, shear_params, translate_params, scale_params]
+            [rotate, shear, translate, scale]
         ]):
 
             aff_mtx = self._get_aff_mtx(
                 spatial_dims=spatial_dims
                 if spatial_dims is not None else len(img.shape),
-                rotate=rotate_params
-                if rotate_params is not None else self.rotate_params,
-                shear=shear_params
-                if shear_params is not None else self.shear_params,
-                translate=translate_params
-                if translate_params is not None else self.translate_params,
-                scale=scale_params
-                if scale_params is not None else self.scale_params,
+                rotate=rotate
+                if rotate is not None else self.rotate,
+                shear=shear
+                if shear is not None else self.shear,
+                translate=translate
+                if translate is not None else self.translate,
+                scale=scale
+                if scale is not None else self.scale,
             )
         else:
             aff_mtx = self.aff_mtx
@@ -106,9 +106,9 @@ class Affine:
         """
         NOTE: MONAI supports torch backend but now the env is in TF, so only numpy is used right now. Want to develop TF version if speed in need.
         Args:
-            rotate_params: a rotation angle in radians, a scalar for 2D image, a tuple of 3 floats for 3D.
+            rotate: a rotation angle in radians, a scalar for 2D image, a tuple of 3 floats for 3D.
                 Defaults to no rotation.
-            shear_params: shearing factors for affine matrix, take a 3D affine as example::
+            shear: shearing factors for affine matrix, take a 3D affine as example::
 
                 [
                     [1.0, params[0], params[1], 0.0],
@@ -118,9 +118,9 @@ class Affine:
                 ]
 
                 a tuple of 2 floats for 2D, a tuple of 6 floats for 3D. Defaults to no shearing.
-            translate_params: a tuple of 2 floats for 2D, a tuple of 3 floats for 3D. Translation is in
+            translate: a tuple of 2 floats for 2D, a tuple of 3 floats for 3D. Translation is in
                 pixel/voxel relative to the center of the input image. Defaults to no translation.
-            scale_params: scale factor for every spatial dims. a tuple of 2 floats for 2D,
+            scale: scale factor for every spatial dims. a tuple of 2 floats for 2D,
                 a tuple of 3 floats for 3D. Defaults to `1.0`.
 
         Raises:
@@ -153,13 +153,11 @@ class RandAffine(Affine, RandParams):
                  translate_range=None,
                  scale_range=None,
                  padding_mode="reflect",
-                 image_only: bool = False,
                  seed=None):
 
         Affine.__init__(self,
                         spatial_dims=spatial_dims,
-                        padding_mode=padding_mode,
-                        image_only=image_only)
+                        padding_mode=padding_mode,)
         RandParams.__init__(self, seed=seed)
         self.spatial_dims = spatial_dims
         self.rotate_range = rotate_range
@@ -173,25 +171,17 @@ class RandAffine(Affine, RandParams):
             self.set_random_state(seed)
         if spatial_dims == 2:
             params = {
-                "rotate":
-                self.get_randparam(self.rotate_range, dim=2),
-                "shear":
-                self.get_randparam(self.shear_range, dim=2),
-                "translate":
-                self.get_randparam(self.translate_range, dim=2),
-                "scale":
-                self.get_randparam(self.scale_range, dim=2, abs=True),
+                "rotate":self.get_randparam(self.rotate_range, dim=2),
+                "shear":self.get_randparam(self.shear_range, dim=2),
+                "translate":self.get_randparam(self.translate_range, dim=2),
+                "scale":self.get_randparam(self.scale_range, dim=2, abs=True),
             }
         elif spatial_dims == 3:
             params = {
-                "rotate":
-                self.get_randparam(self.rotate_range, dim=3),
-                "shear":
-                self.get_randparam(self.shear_range, dim=6),
-                "translate":
-                self.get_randparam(self.translate_range, dim=3),
-                "scale":
-                self.get_randparam(self.scale_range, dim=3, abs=True),
+                "rotate":self.get_randparam(self.rotate_range, dim=3),
+                "shear":self.get_randparam(self.shear_range, dim=6),
+                "translate":self.get_randparam(self.translate_range, dim=3),
+                "scale":self.get_randparam(self.scale_range, dim=3, abs=True),
             }
         else:
             raise NotImplementedError

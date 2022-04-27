@@ -9,7 +9,9 @@ if backend == "tensorflow":
     except ImportError:
         raise ImportError('cannot import backend tensorflow')
 
-    from .np import affine, elastic
+    from . import tf
+    from .tf import perlin, utils
+
 
 elif backend == "pytorch":
     try:
@@ -17,7 +19,9 @@ elif backend == "pytorch":
     except torch:
         raise ImportError('cannot import backend torch')
 
-    from .torch import affine, elastic, svf, perlin
+    from . import torch
+    from .torch import affine, elastic, svf, perlin, utils
 
 else:
+    from . import np
     from .np import affine

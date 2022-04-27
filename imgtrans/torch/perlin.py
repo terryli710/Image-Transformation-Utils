@@ -43,6 +43,8 @@ class RandPerlin:
 
         # convert range of warp from percentage of pixel moved (xvm.utils.transform)
         # to location of image from -1 to 1 (torch.nn.functional.grid_sample)
+        # NOTE: perlin_warp is a DVF that denotes the percentage of displacement
+        # while flow_grid is a flow field that denotes the location of image
 
         flow_grid = dvf2flow_grid(perlin_warp, out_shape)
 
@@ -52,5 +54,5 @@ class RandPerlin:
                                      padding_mode=padding_mode,
                                      align_corners=True)
         
-        return deformed_img, {"flow_grid": flow_grid}
+        return deformed_img, {"dvf": perlin_warp, "flow_grid": flow_grid}
 
