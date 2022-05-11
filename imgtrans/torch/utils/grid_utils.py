@@ -124,8 +124,10 @@ class Resample:
     
 
 def dvf2flow_grid(dvf, out_shape=None):
+    
     """
     convert dvf to flow_grid of torch
+    Another thing we call warp, which is similar to dvf, except that it contains pixel distance instead of persentage movement, so need to be rescaled if want to move it.
     dvf = (H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
     e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis for 10 percent of pixels
 
@@ -135,17 +137,19 @@ def dvf2flow_grid(dvf, out_shape=None):
         dvf (torch.tensor): (H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
         out_shape (array like): (H, W, (D)), shape of the output
     """
+    
     if not out_shape:
         out_shape = dvf.shape[:-1]
     # ndim = len(out_shape)
     # 1. generate range matrix (max100 - min0 = 100)
     ls = [torch.linspace(0, 100, i) for i in dvf.shape[:-1]]
-    mesh = torch.stack(torch.meshgrid(*ls), axis=-1)
-    
+    mesh = torch.stack(torch.meshgrid(*ls), axis=-1) # (H, W, (D), 2 or 3)
+    mesh = torch.flip(mesh, [-1]) # NOTE: somehow the format is ((z), y, x) so have to flip
+
     # 2. scale -> from -1 to 1, (max1 - min-1 = 2)
     assert mesh.shape == dvf.shape
     flow_grid = (mesh + dvf) / 50 - 1
-    
+
     # 3. resize the flow_grid
     if flow_grid.shape != out_shape:
         flow_grid = resize_channel_last(flow_grid[None, ...], out_shape)[0, ...]
@@ -170,6 +174,7 @@ def flow_grid2dvf(flow_grid, out_shape=None):
     # 1. generate range matrix range from -1 to 1
     ls = [torch.linspace(-1, 1, i) for i in flow_grid.shape[:-1]]
     mesh = torch.stack(torch.meshgrid(*ls), axis=-1)
+    mesh = torch.flip(mesh, [-1]) # NOTE: somehow the format is ((z), y, x) so have to flip
     
     # 2. scale -> from 0 to 100
     assert mesh.shape == flow_grid.shape

@@ -1,7 +1,8 @@
 """ perlin transform, inspired by neurite package """
 import torch
 import torch.nn.functional as F
-from .utils.spatial import dvf2flow_grid, draw_perlin
+from .utils.grid_utils import dvf2flow_grid
+from .utils.spatial import draw_perlin
 
 class RandPerlin:
     """
@@ -18,11 +19,11 @@ class RandPerlin:
         self,
         img: torch.Tensor,
         out_shape=None,
-        mode="nearest",
+        mode="bilinear", # for small movement should not be nearest
         padding_mode="reflection",
         dtype=None,
         seed=None,
-    ):  # TODO: std the input and output of torch transformations
+    ):
         """ 
         img = (C or B, H, W, (D))
         
@@ -34,7 +35,7 @@ class RandPerlin:
 
         ndim = len(out_shape)
 
-        perlin_warp = draw_perlin(out_shape=(*out_shape, ndim),
+        perlin_dvf = draw_perlin(out_shape=(*out_shape, ndim),
                                   scales=self.scales,
                                   min_std=self.min_std,
                                   max_std=self.max_std,
@@ -43,16 +44,18 @@ class RandPerlin:
 
         # convert range of warp from percentage of pixel moved (xvm.utils.transform)
         # to location of image from -1 to 1 (torch.nn.functional.grid_sample)
-        # NOTE: perlin_warp is a DVF that denotes the percentage of displacement
+        # NOTE: perlin_dvf is a DVF that denotes the percentage of displacement
         # while flow_grid is a flow field that denotes the location of image
 
-        flow_grid = dvf2flow_grid(perlin_warp, out_shape)
+        flow_grid = dvf2flow_grid(perlin_dvf, out_shape) # (H, W, (D), 2 or 3)
+        # add batch dim to flow_grid
+        flow_grid = flow_grid[None, ...].repeat(img.shape[0], *[1] * (ndim + 1))
 
-        deformed_img = F.grid_sample(input=img,
-                                     gird=flow_grid,
+        deformed_img = F.grid_sample(input=img[:, None, ...], # NOTE: adding Channels = 1 (B, C=1, H, W, (D))
+                                     grid=flow_grid, # NOTE: (B, H, W, (D), ndim)
                                      mode=mode,
                                      padding_mode=padding_mode,
                                      align_corners=True)
         
-        return deformed_img, {"dvf": perlin_warp, "flow_grid": flow_grid}
+        return deformed_img[:, 0, ...], {"dvf": perlin_dvf, "flow_grid": flow_grid}
 

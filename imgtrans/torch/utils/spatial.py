@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from .resize import resize
 
 
 def draw_perlin(out_shape,
@@ -61,7 +62,7 @@ def draw_perlin(out_shape,
                 # 3d
                 gauss = gauss.permute(3, 0, 1, 2)
             else:
-                raise NotImplementedError
+                raise NotImplementedError(f"input dimension not supported: {sample_shape=}")
             
             gauss = resize(gauss.unsqueeze(0), # create batch dim
                            target_size=out_shape[:-1])[0, ...]

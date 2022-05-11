@@ -10,7 +10,7 @@ if backend == "tensorflow":
         raise ImportError('cannot import backend tensorflow')
 
     from . import tf
-    from .tf import perlin, utils
+    from .tf import affine, perlin, utils
 
 
 elif backend == "pytorch":

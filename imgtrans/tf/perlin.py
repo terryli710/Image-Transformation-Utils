@@ -5,6 +5,7 @@ from .utils.resize import resize_channel_last
 
 class RandPerlin:
     """
+    TODO: need to clean this up
     random perlin transformations (use perlin noise as deformation field)
     """
     
@@ -12,9 +13,13 @@ class RandPerlin:
         self.scales = scales
         self.min_std = min_std
         self.max_std = max_std
+        self.interp_method = interp_method
+        self.indexing = indexing
+        self.fill_value = fill_value
         self.spatial_transformer = SpatialTransformer(interp_method=interp_method, 
                         indexing=indexing, 
                         fill_value=fill_value)
+        self.default_in_shape = None
         pass
     
     def __call__(self, 
@@ -43,9 +48,17 @@ class RandPerlin:
                                   dtype=dtype,
                                   seed=seed)
 
-        # use SpatialTransformer to warp the image
-        # NOTE: perlin warp is a DVF that denotes the percentage of displacement
-        deformed_img = self.spatial_transformer([img[..., None], perlin_warp[None, ...]])[..., 0]
+        if self.default_in_shape is None:
+            self.default_in_shape = img.shape[1:]
+        if img.shape[1:] != self.default_in_shape:
+            sptrans = SpatialTransformer(interp_method=self.interp_method, 
+                        indexing=self.indexing, 
+                        fill_value=self.fill_value)
+            deformed_img = sptrans([img[..., None], perlin_warp[None, ...]])[..., 0]
+        else:
+            # use SpatialTransformer to warp the image
+            # NOTE: perlin warp is a DVF that denotes the percentage of displacement
+            deformed_img = self.spatial_transformer([img[..., None], perlin_warp[None, ...]])[..., 0]
 
         return deformed_img, {"dvf": perlin_warp}
         

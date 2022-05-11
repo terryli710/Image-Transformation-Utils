@@ -48,7 +48,7 @@ class Affine:
         """
 
         self.aff_mtx = self._get_aff_mtx(
-            spatial_dims=2,
+            spatial_dims=spatial_dims,
             rotate=rotate,
             shear=shear,
             translate=translate,

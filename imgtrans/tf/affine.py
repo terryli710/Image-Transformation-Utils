@@ -1,14 +1,12 @@
-# affine transformation, from monai
-
+# adopted from voxelmorph and neurite, using affine_matrix -> dense warp transform
 from typing import Callable, List, Optional, Sequence, Union
 
+import numpy as np
+import tensorflow as tf
 from imgtrans.utils.misc import ensure_tuple, ensure_tuple_size
 
-import torch
-
-from .utils.grid_utils import Resample, create_grid
 from .utils.randomize import RandParams
-from .utils.type_utils import convert_tenor_dtype, convert_to_dst_type
+from .utils.transform import AffineSpatialTransformer
 
 
 class Affine:
@@ -20,8 +18,8 @@ class Affine:
         shear: Optional[Union[Sequence[float], float]] = None,
         translate: Optional[Union[Sequence[float], float]] = None,
         scale: Optional[Union[Sequence[float], float]] = 1.0,
-        mode: str = 'bilinear',
-        padding_mode: str = "reflect",
+        mode: str = 'linear', # not bilinear
+        padding_mode: str = "reflect", # HACK: not useful
         device: Optional[str] = None,
     ):
         """
@@ -44,13 +42,12 @@ class Affine:
                 pixel/voxel relative to the center of the input image. Defaults to no translation.
             scale_params: scale factor for every spatial dims. a tuple of 2 floats for 2D,
                 a tuple of 3 floats for 3D. Defaults to `1.0`.
-            padding_mode: {‘reflect’, ‘grid-mirror’, ‘constant’, ‘grid-constant’, ‘nearest’, ‘mirror’, ‘grid-wrap’, ‘wrap’},
+            NOTE: need to change: padding_mode: {‘reflect’, ‘grid-mirror’, ‘constant’, ‘grid-constant’, ‘nearest’, ‘mirror’, ‘grid-wrap’, ‘wrap’},
                 Padding mode for outside grid values. Defaults to ``"reflect"``.
                 See also: https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.affine_transform.html
             image_only: if True return only the image volume, otherwise return (image, affine).
 
         """
-
         self.aff_mtx = self._get_aff_mtx(
             spatial_dims=spatial_dims,
             rotate=rotate,
@@ -60,15 +57,44 @@ class Affine:
         )
         self.mode = mode
         self.padding_mode = padding_mode
-        self.device = device
-        self.resampler = Resample(mode=mode,
-                                  padding_mode=padding_mode,
-                                  device=device)
+        self.device = device # HACK: not useful, just for consistancy
+        self.resampler = AffineSpatialTransformer(interp_method=mode,
+                                  indexing="ij",)
         pass
 
-    def __call__(
-        self,
-        img: torch.Tensor,
+    def _get_aff_mtx(self,
+        spatial_dims,
+        rotate: Optional[List[float]] = None,
+        shear: Optional[List[float]] = None,
+        translate: Optional[List[float]] = None,
+        scale: Optional[List[float]] = None,
+    ):
+        """
+        Args:
+            spatial_dims:
+            rotate:
+            shear:
+            translate:
+            scale:
+
+        Returns:
+
+        """
+        
+        affine = np.eye(spatial_dims + 1)
+        if rotate:
+            affine = affine @ create_rotate(spatial_dims, rotate)
+        if shear:
+            affine = affine @ create_shear(spatial_dims, shear)
+        if translate:
+            affine = affine @ create_translate(spatial_dims, translate)
+        if scale:
+            affine = affine @ create_scale(spatial_dims, scale)
+
+        return affine
+
+    def __call__(self,
+        img: tf.Tensor,
         spatial_dims=None,
         rotate: Optional[Union[Sequence[float], float]] = None,
         shear: Optional[Union[Sequence[float], float]] = None,
@@ -77,6 +103,7 @@ class Affine:
         mode: Optional[str] = None,
         padding_mode: Optional[str] = None,
     ):
+        
         """_summary_
 
         Args:
@@ -107,81 +134,21 @@ class Affine:
             )
         else:
             aff_mtx = self.aff_mtx
-
-        # get grid
-        spatial_size = img.shape[1:]
-        grid = create_grid(spatial_size, device=self.device)
-        grid = convert_tenor_dtype(grid, device=self.device, dtype=float)
-
-        aff_mtx = convert_to_dst_type(aff_mtx, grid)
-
-        grid = (aff_mtx @ grid.reshape(
-            (grid.shape[0], -1))).reshape([-1] + list(grid.shape[1:]))
-
-        trans_img = self.resampler(img,
-                                   grid=grid,
-                                   mode=mode or self.mode,
-                                   padding_mode=padding_mode
-                                   or self.padding_mode)
-
+        # aff_mtx = (N+1, N+1) -> (1, N, N+1)
+        aff_mtx = aff_mtx[None, :-1, :]
+        # NOTE: do not use "call" function
+        trans_img, warp = self.resampler([img[..., None], aff_mtx])
+        trans_img = trans_img[..., 0]
         return trans_img, {
             "aff_mtx": aff_mtx,
-            "grid": grid,
+            "warp": warp,
         }
-
-    def _get_aff_mtx(
-        self,
-        spatial_dims,
-        rotate: Optional[List[float]] = None,
-        shear: Optional[List[float]] = None,
-        translate: Optional[List[float]] = None,
-        scale: Optional[List[float]] = None,
-    ):
-        """
-        NOTE: MONAI supports torch backend but now the env is in TF, so only numpy is used right now. Want to develop TF version if speed in need.
-        Args:
-            rotate_params: a rotation angle in radians, a scalar for 2D image, a tuple of 3 floats for 3D.
-                Defaults to no rotation.
-            shear_params: shearing factors for affine matrix, take a 3D affine as example::
-
-                [
-                    [1.0, params[0], params[1], 0.0],
-                    [params[2], 1.0, params[3], 0.0],
-                    [params[4], params[5], 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-
-                a tuple of 2 floats for 2D, a tuple of 6 floats for 3D. Defaults to no shearing.
-            translate_params: a tuple of 2 floats for 2D, a tuple of 3 floats for 3D. Translation is in
-                pixel/voxel relative to the center of the input image. Defaults to no translation.
-            scale_params: scale factor for every spatial dims. a tuple of 2 floats for 2D,
-                a tuple of 3 floats for 3D. Defaults to `1.0`.
-
-        Raises:
-            affine image matrix (3 * 3)
-
-        """
-
-        # _b = "torch" if isinstance(grid, torch.Tensor) else "numpy"
-        # _device = grid.device if isinstance(grid, torch.Tensor) else self.device
-
-        affine = torch.eye(spatial_dims + 1)
-        if rotate:
-            affine = affine @ create_rotate(spatial_dims, rotate)
-        if shear:
-            affine = affine @ create_shear(spatial_dims, shear)
-        if translate:
-            affine = affine @ create_translate(spatial_dims, translate)
-        if scale:
-            affine = affine @ create_scale(spatial_dims, scale)
-
-        return affine
-
+        
 
 class RandAffine(Affine, RandParams):
 
     def __init__(self,
-                 spatial_dims=None,
+                 spatial_dims=2,
                  rotate_range=None,
                  shear_range=None,
                  translate_range=None,
@@ -222,7 +189,7 @@ class RandAffine(Affine, RandParams):
         return params
 
     def __call__(self,
-                 img: torch.Tensor,
+                 img: tf.Tensor,
                  mode: Optional[str] = None,
                  padding_mode="reflection",
                  seed=None):
@@ -243,13 +210,12 @@ class RandAffine(Affine, RandParams):
             result = (result[0], meta)
 
         return result
-    
 
 
 def create_rotate(
     spatial_dims: int,
     radians: Union[Sequence[float], float],
-    device: Optional[torch.device] = None,
+    device: Optional[str] = None,
 ):
     """
     create a 2D or 3D rotation matrix
@@ -270,11 +236,11 @@ def create_rotate(
     return _create_rotate(
         spatial_dims=spatial_dims,
         radians=radians,
-        sin_func=lambda th: torch.sin(
-            torch.as_tensor(th, dtype=torch.float32, device=device)),
-        cos_func=lambda th: torch.cos(
-            torch.as_tensor(th, dtype=torch.float32, device=device)),
-        eye_func=lambda rank: torch.eye(rank, device=device),
+        sin_func=lambda th: tf.math.sin(
+            tf.convert_to_tensor(th, dtype=tf.float32)),
+        cos_func=lambda th: tf.math.cos(
+            tf.convert_to_tensor(th, dtype=tf.float32)),
+        eye_func=lambda rank: np.eye(rank), # need to check
     )
 
 
@@ -330,7 +296,7 @@ def _create_rotate(
 def create_shear(
     spatial_dims: int,
     coefs: Union[Sequence[float], float],
-    device: Optional[torch.device] = None,
+    device: Optional[str] = None,
 ):
     """
     create a shearing matrix
@@ -356,7 +322,7 @@ def create_shear(
     """
     return _create_shear(spatial_dims=spatial_dims,
                          coefs=coefs,
-                         eye_func=lambda rank: torch.eye(rank, device=device))
+                         eye_func=lambda rank: np.eye(rank))
 
 
 def _create_shear(
@@ -383,7 +349,7 @@ def _create_shear(
 def create_scale(
     spatial_dims: int,
     scaling_factor: Union[Sequence[float], float],
-    device: Optional[torch.device] = None,
+    device: Optional[str] = None,
 ):
     """
     create a scaling matrix
@@ -398,7 +364,7 @@ def create_scale(
     return _create_scale(
         spatial_dims=spatial_dims,
         scaling_factor=scaling_factor,
-        array_func=lambda x: torch.diag(torch.as_tensor(x, device=device)),
+        array_func=lambda x: tf.linalg.diag(tf.convert_to_tensor(x)),
     )
 
 
@@ -414,7 +380,7 @@ def _create_scale(spatial_dims: int, scaling_factor: Union[Sequence[float],
 def create_translate(
     spatial_dims: int,
     shift: Union[Sequence[float], float],
-    device: Optional[torch.device] = None,
+    device: Optional[str] = None,
 ):
     """
     create a translation matrix
@@ -428,9 +394,8 @@ def create_translate(
     return _create_translate(
         spatial_dims=spatial_dims,
         shift=shift,
-        eye_func=lambda x: torch.eye(torch.as_tensor(x), device=device
-                                     ),  # type: ignore
-        array_func=lambda x: torch.as_tensor(x, device=device),  # type: ignore
+        eye_func=lambda x: np.eye(tf.convert_to_tensor(x)),
+        array_func=lambda x: tf.convert_to_tensor(x, dtype=tf.float32),  # type: ignore
     )
 
 

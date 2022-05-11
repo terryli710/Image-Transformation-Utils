@@ -4,7 +4,8 @@
 
 import torch
 import torch.nn.functional as nnf
-from .utils.spatial import draw_perlin, dvf2flow_grid
+from .utils.spatial import draw_perlin
+from .utils.grid_utils import dvf2flow_grid
 
 
 class SVFTransform:
