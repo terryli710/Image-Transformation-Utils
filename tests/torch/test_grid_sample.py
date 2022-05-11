@@ -17,8 +17,9 @@ class DebugGridSample:
         # genrate an identity grid
         image_shape = label_map.shape[1:-1] # 2d
         ls = [torch.linspace(-1, 1, x) for x in image_shape]
-        grid = torch.stack(torch.meshgrid(*ls), dim=-1)
-        grid = torch.flip(grid, [-1])
+        # indexing = "xy"
+        grid = torch.stack(torch.meshgrid(*ls, indexing="xy"), dim=-1)
+        # grid = torch.flip(grid, [-1])
         
         # grid_sample
         img_trans = F.grid_sample(label_map[:, None, ..., slice_idx], grid[None, ...])[0,...]
@@ -32,8 +33,8 @@ class DebugGridSample:
         # genrate an identity grid
         image_shape = label_map.shape[1:] # 3d
         ls = [torch.linspace(-1, 1, x) for x in image_shape]
-        grid = torch.stack(torch.meshgrid(*ls), dim=-1)
-        grid = torch.flip(grid, [-1])
+        grid = torch.stack(torch.meshgrid(*ls, indexing="xy"), dim=-1)
+        # grid = torch.flip(grid, [-1])
         
         # grid_sample
         img_trans = F.grid_sample(label_map[:, None, ...], grid[None, ...])[0,...]

@@ -25,7 +25,7 @@ def _resize3d(image, target_size):
     h = torch.linspace(-1, 1, target_size[0])
     w = torch.linspace(-1, 1, target_size[1])
     d = torch.linspace(-1, 1, target_size[2])
-    meshz, meshy, meshx = torch.meshgrid((h, w, d))
+    meshx, meshy, meshz = torch.meshgrid((h, w, d), indexing="xy")
     grid = torch.stack((meshx, meshy, meshz), dim=-1)
     grid = grid.unsqueeze(0)
     

@@ -19,7 +19,8 @@ class TestGridUtils(unittest.TestCase):
         dvf = torch.zeros((5, 5, 2))
         flow_grid = imt.torch.utils.grid_utils.dvf2flow_grid(dvf)
         synth_flow_grid = torch.stack(torch.meshgrid(torch.linspace(-1, 1, 5),
-                                                     torch.linspace(-1, 1, 5)),
+                                                     torch.linspace(-1, 1, 5),
+                                                     indexing="xy"),
                                       dim=-1)
 
         self.assertTrue(torch.allclose(flow_grid, synth_flow_grid))
@@ -31,6 +32,7 @@ class TestGridUtils(unittest.TestCase):
         # test if dvf is correctly generated from flow_grid
         flow_grid = torch.stack(torch.meshgrid(torch.linspace(-1, 1, 5),
                                                torch.linspace(-1, 1, 5)),
+                                                     indexing="xy",
                                 dim=-1)
         dvf = imt.torch.utils.grid_utils.flow_grid2dvf(flow_grid)
         synth_dvf = torch.zeros((5, 5, 2))
@@ -49,7 +51,8 @@ class DebugGridUtils:
         flow_grid = imt.torch.utils.grid_utils.dvf2flow_grid(dvf)
         synth_flow_grid = torch.stack(torch.meshgrid(torch.linspace(-1, 1, 5),
                                                      torch.linspace(-1, 1, 5),
-                                                     torch.linspace(-1, 1, 5)),
+                                                     torch.linspace(-1, 1, 5),
+                                                     indexing="xy"),
                                       dim=-1)
 
 
