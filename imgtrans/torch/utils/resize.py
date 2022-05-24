@@ -22,13 +22,15 @@ def _resize3d(image, target_size):
         image (torch.tensor): [N, C, H, W, D]
         target_size (array): (H, W, D)
     """
-    h = torch.linspace(-1, 1, target_size[0])
-    w = torch.linspace(-1, 1, target_size[1])
-    d = torch.linspace(-1, 1, target_size[2])
-    meshx, meshy, meshz = torch.meshgrid((h, w, d), indexing="xy")
+    # put on the same device
+    lns = [torch.linspace(-1, 1, target_size[i]).type_as(image) for i in range(3)]
+    # h = torch.linspace(-1, 1, target_size[0])
+    # w = torch.linspace(-1, 1, target_size[1])
+    # d = torch.linspace(-1, 1, target_size[2])
+    meshz, meshy, meshx = torch.meshgrid(lns, indexing="ij")
     grid = torch.stack((meshx, meshy, meshz), dim=-1)
     grid = grid.unsqueeze(0)
-    
+
     out = F.grid_sample(image, grid, align_corners=True)
     return out
 

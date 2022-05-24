@@ -142,10 +142,11 @@ def dvf2flow_grid(dvf, out_shape=None):
         out_shape = dvf.shape[:-1]
     # ndim = len(out_shape)
     # 1. generate range matrix (max100 - min0 = 100)
-    ls = [torch.linspace(0, 100, i) for i in dvf.shape[:-1]]
-    # NOTE: right order: indexing = "xy"
-    mesh = torch.stack(torch.meshgrid(*ls, indexing="xy"), axis=-1) # (H, W, (D), 2 or 3)
-    # mesh = torch.flip(mesh, [-1]) # NOTE: somehow the format is ((z), y, x) so have to flip
+    ls = [torch.linspace(0, 100, i).type_as(dvf) for i in dvf.shape[:-1]]
+    # NOTE: indexing = "xy" doesn't work for 3D cases
+    # so just using torch.flip with "ij" indexing
+    mesh = torch.stack(torch.meshgrid(*ls, indexing="ij"), axis=-1) # (H, W, (D), 2 or 3)
+    mesh = torch.flip(mesh, [-1]) # NOTE: somehow the format is ((z), y, x) so have to flip
 
     # 2. scale -> from -1 to 1, (max1 - min-1 = 2)
     assert mesh.shape == dvf.shape
@@ -174,7 +175,8 @@ def flow_grid2dvf(flow_grid, out_shape=None):
     # ndim = len(out_shape)
     # 1. generate range matrix range from -1 to 1
     ls = [torch.linspace(-1, 1, i) for i in flow_grid.shape[:-1]]
-    mesh = torch.stack(torch.meshgrid(*ls, indexing="xy"), axis=-1)
+    mesh = torch.stack(torch.meshgrid(*ls, indexing="ij"), axis=-1)
+    mesh = torch.flip(mesh, [-1])
     
     # 2. scale -> from 0 to 100
     assert mesh.shape == flow_grid.shape

@@ -8,6 +8,7 @@ def draw_perlin(out_shape,
                 min_std=0,
                 max_std=1,
                 dtype=torch.float32,
+                device=None,
                 seed=None):
     '''
     Generate Perlin noise by drawing from Gaussian distributions at different
@@ -40,7 +41,7 @@ def draw_perlin(out_shape,
         scales = [scales]
     # set random seed, would work within the function
     np.random.seed(seed)
-    out = torch.zeros(out_shape[-1], *out_shape[:-1], dtype=dtype) # channel first (C, H, W, (D))
+    out = torch.zeros(out_shape[-1], *out_shape[:-1], dtype=dtype).to(device) # channel first (C, H, W, (D))
     
     for scale in scales:
         sample_shape = np.ceil(tuple(s / scale for s in out_shape[:-1])).astype("int32")
@@ -48,7 +49,7 @@ def draw_perlin(out_shape,
         std = np.random.uniform(0, 1) * \
             (max_std - min_std) + min_std
         gauss = np.random.normal(size=sample_shape, loc=0, scale=std)
-        gauss = torch.from_numpy(gauss).type(dtype)
+        gauss = torch.from_numpy(gauss).type(dtype).to(device)
 
         # zoom = [o / s for o, s in zip(out_shape, sample_shape)]
         

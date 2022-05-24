@@ -40,6 +40,7 @@ class RandPerlin:
                                   min_std=self.min_std,
                                   max_std=self.max_std,
                                   dtype=dtype,
+                                  device=img.device,
                                   seed=seed)
 
         # convert range of warp from percentage of pixel moved (xvm.utils.transform)
@@ -49,7 +50,7 @@ class RandPerlin:
 
         flow_grid = dvf2flow_grid(perlin_dvf, out_shape) # (H, W, (D), 2 or 3)
         # add batch dim to flow_grid
-        flow_grid = flow_grid[None, ...].repeat(img.shape[0], *[1] * (ndim + 1))
+        flow_grid = flow_grid[None, ...].repeat(img.shape[0], *[1] * (ndim + 1)).type_as(img)
 
         deformed_img = F.grid_sample(input=img[:, None, ...], # NOTE: adding Channels = 1 (B, C=1, H, W, (D))
                                      grid=flow_grid, # NOTE: (B, H, W, (D), ndim)
