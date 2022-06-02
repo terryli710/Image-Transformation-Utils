@@ -21,7 +21,7 @@ class Affine:
         translate: Optional[Union[Sequence[float], float]] = None,
         scale: Optional[Union[Sequence[float], float]] = 1.0,
         mode: str = 'bilinear',
-        padding_mode: str = "reflect",
+        padding_mode: str = "reflection",
         device: Optional[str] = None,
     ):
         """
@@ -118,6 +118,8 @@ class Affine:
         grid = (aff_mtx @ grid.reshape(
             (grid.shape[0], -1))).reshape([-1] + list(grid.shape[1:]))
 
+        # make sure that img is in the same device as grid
+        img = convert_tenor_dtype(img, device=self.device)
         trans_img = self.resampler(img,
                                    grid=grid,
                                    mode=mode or self.mode,
@@ -186,7 +188,7 @@ class RandAffine(Affine, RandParams):
                  shear_range=None,
                  translate_range=None,
                  scale_range=None,
-                 padding_mode="reflect",
+                 padding_mode="reflection",
                  seed=None):
 
         Affine.__init__(self,

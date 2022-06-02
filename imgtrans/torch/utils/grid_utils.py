@@ -119,7 +119,7 @@ class Resample:
             if padding_mode is None else padding_mode,
             align_corners=False,  # NOTE: guess not much difference: https://discuss.pytorch.org/t/what-we-should-use-align-corners-false/22663/9
         )[0]
-        return torch.as_tensor(out), grid
+        return torch.as_tensor(out)
     
     
 
