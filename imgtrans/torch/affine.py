@@ -11,6 +11,67 @@ from .utils.randomize import RandParams
 from .utils.type_utils import convert_tenor_dtype, convert_to_dst_type
 
 
+def affine_trans(img, 
+                aff_mtx,
+                mode="bilinear", 
+                padding_mode="reflection",
+                resampler=None,
+                device=None):
+    """
+    Args:
+        img: torch.tensor (B or C, H, W (D))
+        aff_mtx: ()
+    Returns:
+        output image, params
+
+    """
+    if not resampler:
+        resampler = Resample(mode=mode,
+                                  padding_mode=padding_mode,
+                                  device=device)
+    # get grid
+    spatial_size = img.shape[1:]
+    grid = create_grid(spatial_size, device=device)
+    grid = convert_tenor_dtype(grid, device=device, dtype=float)
+
+    aff_mtx = convert_to_dst_type(aff_mtx, grid)
+
+    grid = (aff_mtx @ grid.reshape(
+        (grid.shape[0], -1))).reshape([-1] + list(grid.shape[1:]))
+
+    # make sure that img is in the same device as grid
+    img = convert_tenor_dtype(img, device=device)
+    trans_img = resampler(img,
+                                grid=grid,
+                                mode=mode,
+                                padding_mode=padding_mode,)
+
+    return trans_img, {
+        "aff_mtx": aff_mtx,
+        "grid": grid,
+    }
+
+
+
+def inverse_affine(image, aff_mtx, **kwargs):
+    """
+    inverse affine transformation
+
+    Args:
+        image: input image, need to be inversed (B or C, H, W, (D))
+        aff_mtx: affine matrix that was used to transform the image ()
+
+    Returns:
+        output image
+
+    """
+
+    inverse_mtx = torch.inverse(aff_mtx)
+    img_trans, params = affine_trans(image, inverse_mtx, **kwargs)
+    return img_trans, params
+
+
+
 class Affine:
 
     def __init__(
@@ -108,28 +169,13 @@ class Affine:
         else:
             aff_mtx = self.aff_mtx
 
-        # get grid
-        spatial_size = img.shape[1:]
-        grid = create_grid(spatial_size, device=self.device)
-        grid = convert_tenor_dtype(grid, device=self.device, dtype=float)
-
-        aff_mtx = convert_to_dst_type(aff_mtx, grid)
-
-        grid = (aff_mtx @ grid.reshape(
-            (grid.shape[0], -1))).reshape([-1] + list(grid.shape[1:]))
-
-        # make sure that img is in the same device as grid
-        img = convert_tenor_dtype(img, device=self.device)
-        trans_img = self.resampler(img,
-                                   grid=grid,
-                                   mode=mode or self.mode,
-                                   padding_mode=padding_mode
-                                   or self.padding_mode)
-
-        return trans_img, {
-            "aff_mtx": aff_mtx,
-            "grid": grid,
-        }
+        trans_img, params = affine_trans(img=img, 
+                                        aff_mtx=aff_mtx,
+                                        mode=mode or self.mode,
+                                        padding_mode=padding_mode or self.padding_mode,
+                                        resampler=self.resampler,
+                                        device=self.device)
+        return trans_img, params
 
     def _get_aff_mtx(
         self,
@@ -246,6 +292,52 @@ class RandAffine(Affine, RandParams):
 
         return result
     
+
+class InverseAffine(Affine):
+    def __init__(
+        self,
+        spatial_dims=2,
+        rotate: Optional[Union[Sequence[float], float]] = None,
+        shear: Optional[Union[Sequence[float], float]] = None,
+        translate: Optional[Union[Sequence[float], float]] = None,
+        scale: Optional[Union[Sequence[float], float]] = 1.0,
+        mode: str = 'bilinear',
+        padding_mode: str = "reflection",
+        device: Optional[str] = None,
+    ):
+        super().__init__(self,
+                            spatial_dims=spatial_dims,
+                            rotate=rotate,
+                            shear=shear,
+                            translate=translate,
+                            scale=scale,
+                            mode=mode,
+                            padding_mode=padding_mode,
+                            device=device)
+        pass
+
+    def __call__(self,
+                    img: torch.Tensor,
+                    mode: Optional[str] = None,
+                    padding_mode="reflection",
+                    seed=None):
+            """
+            Args:
+                img: a tensor of shape [batch, channel, height, width]
+                mode: interpolation mode.
+                    Default: `bilinear`.
+                padding_mode: padding mode for outside grid points.
+                    Default: `reflection`.
+                seed: random seed for reproducibility.
+                    Default: None.
+    
+            Returns:
+                a tensor of shape [batch, channel, height, width]
+            """
+
+
+
+
 
 
 def create_rotate(
