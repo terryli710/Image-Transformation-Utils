@@ -71,15 +71,14 @@ def inverse_affine(image, aff_mtx, **kwargs):
     return img_trans, params
 
 
-
 class Affine:
 
     def __init__(
         self,
         spatial_dims=2,
-        rotate: Optional[Union[Sequence[float], float]] = None,
-        shear: Optional[Union[Sequence[float], float]] = None,
-        translate: Optional[Union[Sequence[float], float]] = None,
+        rotate: Optional[Union[Sequence[float], float]] = 0.0,
+        shear: Optional[Union[Sequence[float], float]] = 0.0,
+        translate: Optional[Union[Sequence[float], float]] = 0.0,
         scale: Optional[Union[Sequence[float], float]] = 1.0,
         mode: str = 'bilinear',
         padding_mode: str = "reflection",
@@ -130,7 +129,7 @@ class Affine:
     def __call__(
         self,
         img: torch.Tensor,
-        spatial_dims=None,
+        spatial_dims=2,
         rotate: Optional[Union[Sequence[float], float]] = None,
         shear: Optional[Union[Sequence[float], float]] = None,
         translate: Optional[Union[Sequence[float], float]] = None,
@@ -180,10 +179,10 @@ class Affine:
     def _get_aff_mtx(
         self,
         spatial_dims,
-        rotate: Optional[List[float]] = None,
-        shear: Optional[List[float]] = None,
-        translate: Optional[List[float]] = None,
-        scale: Optional[List[float]] = None,
+        rotate: Optional[List[float]] = 0.0,
+        shear: Optional[List[float]] = 0.0,
+        translate: Optional[List[float]] = 0.0,
+        scale: Optional[List[float]] = 1.0,
     ):
         """
         NOTE: MONAI supports torch backend but now the env is in TF, so only numpy is used right now. Want to develop TF version if speed in need.
@@ -229,11 +228,11 @@ class Affine:
 class RandAffine(Affine, RandParams):
 
     def __init__(self,
-                 spatial_dims=None,
-                 rotate_range=None,
-                 shear_range=None,
-                 translate_range=None,
-                 scale_range=None,
+                 spatial_dims=2,
+                 rotate_range=(-0.05, 0.05),
+                 shear_range=(0, 0),
+                 translate_range=(0, 0),
+                 scale_range=(0.95, 1.05),
                  padding_mode="reflection",
                  seed=None):
 
@@ -285,59 +284,11 @@ class RandAffine(Affine, RandParams):
                                  mode=mode,
                                  padding_mode=padding_mode,
                                  **params)
-        if not self.image_only:
-            meta = result[1]
-            meta.update({"params":params})
-            result = (result[0], meta)
+        meta = result[1]
+        meta.update({"params":params})
+        result = (result[0], meta)
 
         return result
-    
-
-class InverseAffine(Affine):
-    def __init__(
-        self,
-        spatial_dims=2,
-        rotate: Optional[Union[Sequence[float], float]] = None,
-        shear: Optional[Union[Sequence[float], float]] = None,
-        translate: Optional[Union[Sequence[float], float]] = None,
-        scale: Optional[Union[Sequence[float], float]] = 1.0,
-        mode: str = 'bilinear',
-        padding_mode: str = "reflection",
-        device: Optional[str] = None,
-    ):
-        super().__init__(self,
-                            spatial_dims=spatial_dims,
-                            rotate=rotate,
-                            shear=shear,
-                            translate=translate,
-                            scale=scale,
-                            mode=mode,
-                            padding_mode=padding_mode,
-                            device=device)
-        pass
-
-    def __call__(self,
-                    img: torch.Tensor,
-                    mode: Optional[str] = None,
-                    padding_mode="reflection",
-                    seed=None):
-            """
-            Args:
-                img: a tensor of shape [batch, channel, height, width]
-                mode: interpolation mode.
-                    Default: `bilinear`.
-                padding_mode: padding mode for outside grid points.
-                    Default: `reflection`.
-                seed: random seed for reproducibility.
-                    Default: None.
-    
-            Returns:
-                a tensor of shape [batch, channel, height, width]
-            """
-
-
-
-
 
 
 def create_rotate(

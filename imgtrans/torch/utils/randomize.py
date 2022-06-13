@@ -42,7 +42,11 @@ class RandParams(Randomizable):
         # typically, param_range = (lowerbound, upperbound), while the range includes
         # [-ub, -lb] U [lb, ub];
         # abs: if set to True, then the param_range won't include their negative sides
+        # if param_range = None then return None
         out_param = []
+        # if the upperbound is equal to the lowerbound, then return the value
+        if param_range[1] == param_range[0]:
+            return [param_range[0]] * dim
         for i in range(dim):
             param = torch.rand(size=(1,))[0] * (param_range[1] - param_range[0]) + param_range[0]
             if not abs:
