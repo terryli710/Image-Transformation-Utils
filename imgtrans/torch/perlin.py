@@ -9,7 +9,7 @@ class RandPerlin:
     random perlin transformations (use perlin noise as deformation field)
     """
 
-    def __init__(self, scales=(32, 64), min_std=0, max_std=1):
+    def __init__(self, scales=(32, 64), max_std=1, min_std=0):
         self.scales = scales
         self.min_std = min_std
         self.max_std = max_std
