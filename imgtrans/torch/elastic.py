@@ -83,7 +83,6 @@ class DeformElastic:
         grid = CenterSpatialCrop(roi_size=sp_size)(grid)
         # center crop
         grid = grid[:,]
-        print(grid.shape)
         ret, real_grid = self.resampler(
             img,
             grid,

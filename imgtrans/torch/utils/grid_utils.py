@@ -84,6 +84,7 @@ class Resample:
         Args:
             img: shape must be (num_channels, H, W[, D]).
             grid: shape must be (3, H, W) for 2D or (4, H, W, D) for 3D.
+            NOTE: this grid is offcially define in the dvf2flow_grid function
             mode: {``"bilinear"``, ``"nearest"``}
                 Interpolation mode to calculate output values. Defaults to ``self.mode``.
                 See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
@@ -103,7 +104,7 @@ class Resample:
         if self.device:
             img = img.to(self.device)
             grid = grid.to(self.device)
-
+        # convert warp to flow_grid (defined by torch.nn.functional.grid_sample)
         for i, dim in enumerate(img.shape[1:]):
             grid[i] = 2.0 * grid[i] / (dim - 1.0)
 
@@ -127,26 +128,32 @@ def dvf2flow_grid(dvf, out_shape=None):
     
     """
     convert dvf to flow_grid of torch
-    Another thing we call warp, which is similar to dvf, except that it contains pixel distance instead of persentage movement, so need to be rescaled if want to move it.
-    dvf = (H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
-    e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis for 10 percent of pixels
-
-    flow_grid = (H, W, (D), 2 or 3)  range from [-1, 1], for more info see torch.nn.functional.grid_sample
+    - dvf = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
+            e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
+    - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
+    - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
+    - grid = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
     
     Args:
-        dvf (torch.tensor): (H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
+        dvf (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
         out_shape (array like): (H, W, (D)), shape of the output
+    Output:
+        flow_grid (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel movement of each position
     """
-    
+    in_shape = dvf.shape[1:-1]
+    batch_size = dvf.shape[0]
+    ndims = dvf.shape[-1]
+
     if not out_shape:
-        out_shape = dvf.shape[:-1]
+        out_shape = in_shape
     # ndim = len(out_shape)
     # 1. generate range matrix (max100 - min0 = 100)
-    ls = [torch.linspace(0, 100, i).type_as(dvf) for i in dvf.shape[:-1]]
+    ls = [torch.linspace(0, 100, i).type_as(dvf) for i in in_shape]
     # NOTE: indexing = "xy" doesn't work for 3D cases
     # so just using torch.flip with "ij" indexing
-    mesh = torch.stack(torch.meshgrid(*ls, indexing="ij"), axis=-1) # (H, W, (D), 2 or 3)
-    mesh = torch.flip(mesh, [-1]) # NOTE: somehow the format is ((z), y, x) so have to flip
+    mesh = torch.stack(torch.meshgrid(*ls, indexing="xy"), axis=-1) # (H, W, (D), 2 or 3)
+    # repeat mesh to match batch size
+    mesh = mesh.repeat(batch_size, *([1] * (ndims + 1)))
 
     # 2. scale -> from -1 to 1, (max1 - min-1 = 2)
     assert mesh.shape == dvf.shape
@@ -154,29 +161,37 @@ def dvf2flow_grid(dvf, out_shape=None):
 
     # 3. resize the flow_grid
     if flow_grid.shape != out_shape:
-        flow_grid = resize_channel_last(flow_grid[None, ...], out_shape)[0, ...]
+        flow_grid = resize_channel_last(flow_grid, out_shape) # flow_grid (B, H, W, (D), 2 or 3)
     return flow_grid
 
 
 def flow_grid2dvf(flow_grid, out_shape=None):
     """
     convert dvf to flow_grid of torch
-    dvf = (H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
-    e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis for 10 percent of pixels
-
-    flow_grid = (H, W, (D), 2 or 3)  range from [-1, 1], for more info see torch.nn.functional.grid_sample
+    - dvf = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
+            e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
+    - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
+    - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
+    - grid = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
     
     Args:
-        dvf (torch.tensor): (H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
+        flow_grid (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel movement of each position
         out_shape (array like): (H, W, (D)), shape of the output
+    Output:
+        dvf (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
     """
+    in_shape = flow_grid.shape[1:-1]
+    batch_size = flow_grid.shape[0]
+    ndims = flow_grid.shape[-1]
+
     if not out_shape:
-        out_shape = flow_grid.shape
+        out_shape = in_shape
     # ndim = len(out_shape)
     # 1. generate range matrix range from -1 to 1
-    ls = [torch.linspace(-1, 1, i) for i in flow_grid.shape[:-1]]
-    mesh = torch.stack(torch.meshgrid(*ls, indexing="ij"), axis=-1)
-    mesh = torch.flip(mesh, [-1])
+    ls = [torch.linspace(-1, 1, i) for i in in_shape]
+    mesh = torch.stack(torch.meshgrid(*ls, indexing="xy"), axis=-1)
+    # repeat mesh to match batch size
+    mesh = mesh.repeat(batch_size, *([1] * (ndims + 1)))
     
     # 2. scale -> from 0 to 100
     assert mesh.shape == flow_grid.shape
@@ -184,5 +199,5 @@ def flow_grid2dvf(flow_grid, out_shape=None):
     
     # 3. resize the flow_grid
     if dvf.shape != out_shape:
-        dvf = resize_channel_last(dvf[None, ...], out_shape)[0, ...]
+        dvf = resize_channel_last(dvf, out_shape)
     return dvf
