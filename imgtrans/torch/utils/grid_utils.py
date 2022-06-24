@@ -156,7 +156,7 @@ def dvf2flow_grid(dvf, out_shape=None):
     mesh = mesh.repeat(batch_size, *([1] * (ndims + 1)))
 
     # 2. scale -> from -1 to 1, (max1 - min-1 = 2)
-    assert mesh.shape == dvf.shape
+    assert mesh.shape == dvf.shape, "mesh and dvf must have the same shape"
     flow_grid = (mesh + dvf) / 50 - 1
 
     # 3. resize the flow_grid

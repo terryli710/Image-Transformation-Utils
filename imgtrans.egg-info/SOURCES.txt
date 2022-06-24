@@ -26,6 +26,7 @@ imgtrans/torch/affine.py
 imgtrans/torch/elastic.py
 imgtrans/torch/perlin.py
 imgtrans/torch/svf.py
+imgtrans/torch/transform.py
 imgtrans/torch/utils/__init__.py
 imgtrans/torch/utils/crop.py
 imgtrans/torch/utils/grid_utils.py

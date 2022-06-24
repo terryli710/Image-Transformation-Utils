@@ -20,7 +20,7 @@ elif backend == "pytorch":
         raise ImportError('cannot import backend torch')
 
     from . import torch
-    from .torch import affine, elastic, svf, perlin, utils
+    from .torch import affine, elastic, svf, perlin, utils, transform
 
 else:
     from . import np

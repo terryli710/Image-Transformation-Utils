@@ -47,10 +47,10 @@ class RandPerlin:
         # to location of image from -1 to 1 (torch.nn.functional.grid_sample)
         # NOTE: perlin_dvf is a DVF that denotes the percentage of displacement
         # while flow_grid is a flow field that denotes the location of image
-
-        flow_grid = dvf2flow_grid(perlin_dvf, out_shape) # (H, W, (D), 2 or 3)
+        # add batch dim to dvf
+        flow_grid = dvf2flow_grid(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
         # add batch dim to flow_grid
-        flow_grid = flow_grid[None, ...].repeat(img.shape[0], *[1] * (ndim + 1)).type_as(img)
+        flow_grid = flow_grid.repeat(img.shape[0], *[1] * (ndim + 1)).type_as(img)
 
         deformed_img = F.grid_sample(input=img[:, None, ...], # NOTE: adding Channels = 1 (B, C=1, H, W, (D))
                                      grid=flow_grid, # NOTE: (B, H, W, (D), ndim)
