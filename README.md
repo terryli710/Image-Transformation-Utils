@@ -23,5 +23,5 @@ os.environ["IMG_TRANS_BACKEND"] = "pytorch" # "tf" or "numpy"
 ```
 import imgtrans as imt
 rand_affine_trans = imt.affine.RandAffine()
-transformed_img = rand_affine_trans(img)
+transformed_img, params = rand_affine_trans(img)
 ```
