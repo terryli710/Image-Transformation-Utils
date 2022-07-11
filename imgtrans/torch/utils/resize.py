@@ -30,6 +30,7 @@ def _resize3d(image, target_size):
     meshz, meshy, meshx = torch.meshgrid(lns, indexing="ij")
     grid = torch.stack((meshx, meshy, meshz), dim=-1)
     grid = grid.unsqueeze(0)
+    grid.requires_grad = image.requires_grad
 
     out = F.grid_sample(image, grid, align_corners=True)
     return out

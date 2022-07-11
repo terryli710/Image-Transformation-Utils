@@ -1,21 +1,26 @@
 """ perlin transform, inspired by neurite package """
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from .utils.grid_utils import dvf2flow_grid
-from .utils.spatial import draw_perlin
 
-class RandPerlin:
+from .utils.grid_utils import DVF2Flow
+from .utils.spatial import DrawPerlin
+
+
+class RandPerlin(nn.Module):
     """
     random perlin transformations (use perlin noise as deformation field)
     """
 
-    def __init__(self, scales=(32, 64), max_std=1, min_std=0):
+    def __init__(self, scales=(32, 64), max_std=1, min_std=0, requires_grad=True):
+        super().__init__()
         self.scales = scales
         self.min_std = min_std
         self.max_std = max_std
+        self.requires_grad = requires_grad
         pass
 
-    def __call__(
+    def forward(
         self,
         img: torch.Tensor,
         out_shape=None,
@@ -35,7 +40,7 @@ class RandPerlin:
 
         ndim = len(out_shape)
 
-        perlin_dvf = draw_perlin(out_shape=(*out_shape, ndim),
+        perlin_dvf = DrawPerlin(requires_grad=self.requires_grad)(out_shape=(*out_shape, ndim),
                                   scales=self.scales,
                                   min_std=self.min_std,
                                   max_std=self.max_std,
@@ -48,7 +53,7 @@ class RandPerlin:
         # NOTE: perlin_dvf is a DVF that denotes the percentage of displacement
         # while flow_grid is a flow field that denotes the location of image
         # add batch dim to dvf
-        flow_grid = dvf2flow_grid(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
+        flow_grid = DVF2Flow(requires_grad=self.requires_grad)(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
         # add batch dim to flow_grid
         flow_grid = flow_grid.repeat(img.shape[0], *[1] * (ndim + 1)).type_as(img)
 

@@ -4,8 +4,8 @@
 
 import torch
 import torch.nn.functional as nnf
-from .utils.spatial import draw_perlin
-from .utils.grid_utils import dvf2flow_grid
+from .utils.spatial import DrawPerlin
+from .utils.grid_utils import DVF2Flow
 
 
 class SVFTransform:
@@ -40,8 +40,8 @@ class SVFTransform:
         """
         if not out_shape:
             out_shape = img.shape[1:]
-        flow_svf = dvf2flow_grid(
-            svf, out_shape)  # convert range from percentage to -1, 1
+        # convert range from percentage to -1, 1
+        flow_svf = DVF2Flow()(svf, out_shape)
         img_copy = img.clone().unsqueeze(0).type(torch.float32) # have to create another dim for grid_sample
         for i in range(self.nsteps):
             img_copy = nnf.grid_sample(
@@ -92,7 +92,7 @@ class RandSVFTransform(SVFTransform):
 
         ndim = len(out_shape)
 
-        svf = draw_perlin(out_shape=(*out_shape, ndim),
+        svf = DrawPerlin()(out_shape=(*out_shape, ndim),
                           scales=[self.scale],
                           max_std=self.max_std if max_std is None else max_std,
                           seed=seed)

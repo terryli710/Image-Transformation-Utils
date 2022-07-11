@@ -77,7 +77,8 @@ class SpatialTransformer(nn.Module):
         - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
         - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
         - grid = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
-    
+
+
         kwargs: for grid_sample: mode, padding_mode, align_corners
         """
         super().__init__()
@@ -91,6 +92,7 @@ class SpatialTransformer(nn.Module):
         img = (B, C, H, W, (D))
         matrix = (B, H, W, (D), ndim)
         """
+
         # some assertions
         assert img.shape[2:] == matrix.shape[1:-1], "img and matrix should have the same shape"
         assert img.shape[0] == matrix.shape[0], "img and matrix should have the same batch size"
