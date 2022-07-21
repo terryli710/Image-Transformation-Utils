@@ -13,12 +13,12 @@ class DrawPerlin(nn.Module):
     
     def forward(self, 
                 out_shape,
-                    scales,
-                    min_std=0,
-                    max_std=1,
-                    dtype=torch.float32,
-                    device=None,
-                    seed=None):
+                scales,
+                min_std=0,
+                max_std=1,
+                dtype=torch.float32,
+                device=None,
+                seed=None):
         '''
         Generate Perlin noise by drawing from Gaussian distributions at different
         resolutions, upsampling and summing. There are a couple of key differences
@@ -49,12 +49,14 @@ class DrawPerlin(nn.Module):
         if np.isscalar(scales):
             scales = [scales]
         # set random seed, would work within the function
-        np.random.seed(seed)
-        out = torch.zeros(out_shape[-1], *out_shape[:-1], dtype=dtype).to(device) # channel first (C, H, W, (D))
+        if seed is not None:
+            np.random.seed(seed)
+            torch.manual_seed(seed) 
+        out = torch.zeros(out_shape[-1], *out_shape[:-1], dtype=dtype).to(device) # channel last (H, W, (D), C)
 
         for scale in scales:
             scaled_shape = torch.tensor([s / scale for s in out_shape[:-1]]).to(torch.int32) # ceil is not diffientiable
-            sample_shape = (*scaled_shape, out_shape[-1]) # TODO: check differianblility
+            sample_shape = (*scaled_shape, out_shape[-1])
             std = torch.rand([1], requires_grad=self.requires_grad, device=device) * (max_std - min_std) + min_std
             gauss = torch.randn(sample_shape, requires_grad=self.requires_grad, device=device, dtype=dtype) * std
 

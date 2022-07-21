@@ -29,6 +29,10 @@ class TestTransforms:
         exp_img = torch.from_numpy(exp_img).type(torch.float)
         elastic = imt.perlin.RandPerlin(scales=(32, 64), max_std=5)
         ret, params = elastic(exp_img[None, ...], seed=42)
+
+        # detach 
+        ret = ret.detach().numpy()
+        params['flow_grid'] = params['flow_grid'].detach().numpy()
         ndarrays_regression.check({"ret": ret, "flow_grid": params['flow_grid']})
         save_path = osp.join(self.DIRPATH, "random_perlin.jpeg")
         plt.imsave(save_path, arr=ret[0,...], cmap="gray")
