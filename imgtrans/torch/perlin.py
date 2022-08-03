@@ -12,12 +12,14 @@ class RandPerlin(nn.Module):
     random perlin transformations (use perlin noise as deformation field)
     """
 
-    def __init__(self, scales=(32, 64), max_std=1, min_std=0, requires_grad=True):
+    def __init__(self, scales=(32, 64), max_std=1, min_std=0, requires_grad=True, device=None):
         super().__init__()
         self.scales = scales
         self.min_std = min_std
         self.max_std = max_std
         self.requires_grad = requires_grad
+        self.device = device
+        self.dvf2flow = DVF2Flow(requires_grad=self.requires_grad, device=self.device)
         pass
 
     def forward(
@@ -53,7 +55,7 @@ class RandPerlin(nn.Module):
         # NOTE: perlin_dvf is a DVF that denotes the percentage of displacement
         # while flow_grid is a flow field that denotes the location of image
         # add batch dim to dvf
-        flow_grid = DVF2Flow(requires_grad=self.requires_grad)(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
+        flow_grid = self.dvf2flow(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
         # add batch dim to flow_grid
         flow_grid = flow_grid.repeat(img.shape[0], *[1] * (ndim + 1)).type_as(img)
 
