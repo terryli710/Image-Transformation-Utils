@@ -166,7 +166,7 @@ def dvf2warp(dvf, device=None, dtype=torch.float):
     size = dvf.shape[1:-1]
     # ndim = dvf.shape[-1]
     # rescale warp from percentage to pixel movements
-    warp = dvf * torch.tensor(size, dtype=dtype, device=device) / 100
+    warp = dvf * torch.tensor(size, dtype=dtype, device=device if device else dvf.device) / 100
     return warp
 
 
