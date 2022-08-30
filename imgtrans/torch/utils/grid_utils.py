@@ -138,11 +138,11 @@ def get_mesh(mesh_shape, batch_size=1, device=None, dtype=torch.float):
     return mesh
 
 
-def warp2dvf(warp, device=None, dtype=torch.float):
+def warp_pixel2percentage(warp, device=None, dtype=torch.float):
     """
-    warp: (N, H, W[, D], 2 or 3), contains pixel movements in each direction
+    warp_pixel: (N, H, W[, D], 2 or 3), contains pixel movements in each direction
     return:
-        dvf: contains percentage information of each pixel movement
+        warp_percentage: contains percentage information of each pixel movement
     need to rescale the warp, 1% movement = 1 * (H, W, D) pixels
     """
     assert warp.shape[-1] in (2, 3), "warp must have shape (N, H, W[, D], 2 or 3)"
@@ -154,11 +154,11 @@ def warp2dvf(warp, device=None, dtype=torch.float):
     return warp
 
 
-def dvf2warp(dvf, device=None, dtype=torch.float):
+def warp_percentage2pixel(dvf, device=None, dtype=torch.float):
     """
-    dvf: (N, H, W[, D], 2 or 3), contains percentage information of each pixel movement
+    warp_percentage: (N, H, W[, D], 2 or 3), contains percentage information of each pixel movement
     return:
-        warp: contains pixel movements in each direction
+        warp_pixel: contains pixel movements in each direction
     need to rescale the warp, 1% movement = 1 * (H, W, D) pixels
     """
     assert dvf.shape[-1] in (2, 3), "dvf must have shape (N, H, W[, D], 2 or 3)"
@@ -170,7 +170,7 @@ def dvf2warp(dvf, device=None, dtype=torch.float):
     return warp
 
 
-class DVF2Flow(nn.Module):
+class Warp2Flow(nn.Module):
 
     def __init__(self, requires_grad=False, device=None):
         super().__init__()
@@ -178,15 +178,15 @@ class DVF2Flow(nn.Module):
         self.device = device
         pass
 
-    def forward(self, dvf, out_shape=None):
+    def forward(self, warp_percentage, out_shape=None):
         
         """
-        convert dvf to flow_grid of torch
-        - dvf = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
+        convert warp_percentage to flow_grid of torch
+        - warp_percentage = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
                 e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
-        - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
+        - warp_pixel = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
         - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
-        - grid = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
+        - flow_pixel (dvf) = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
         
         Args:
             dvf (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
@@ -194,31 +194,31 @@ class DVF2Flow(nn.Module):
         Output:
             flow_grid (torch.tensor): (B, H, W, (D), 2 or 3) denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
         """
-        in_shape = dvf.shape[1:-1]
-        batch_size = dvf.shape[0]
-        # ndims = dvf.shape[-1]
+        in_shape = warp_percentage.shape[1:-1]
+        batch_size = warp_percentage.shape[0]
+        # ndims = warp_percentage.shape[-1]
 
         if not out_shape:
             out_shape = in_shape
-        warp = dvf2warp(dvf, device=self.device, dtype=dvf.dtype)
+        warp = warp_percentage2pixel(warp_percentage, device=self.device, dtype=warp_percentage.dtype)
         mesh = get_mesh(mesh_shape=in_shape, 
                         batch_size=batch_size, 
                         device=self.device, 
-                        dtype=dvf.dtype)
+                        dtype=warp_percentage.dtype)
 
         # 2. scale -> from -1 to 1, (max1 - min - 1 = 2)
         assert mesh.shape == warp.shape, "mesh and dvf must have the same shape"
-        grid = (mesh + warp)
+        flow_grid = (mesh + warp)
         for i in range(len(in_shape)):
-            grid[..., i] = 2 * (grid[..., i] / (in_shape[i] - 1) - 0.5)
+            flow_grid[..., i] = 2 * (flow_grid[..., i] / (in_shape[i] - 1) - 0.5)
 
         # 3. resize the flow_grid
-        if grid.shape != out_shape:
-            grid = resize_channel_last(grid, out_shape) # flow_grid (B, H, W, (D), 2 or 3)
-        return grid
+        if flow_grid.shape != out_shape:
+            flow_grid = resize_channel_last(flow_grid, out_shape) # flow_grid (B, H, W, (D), 2 or 3)
+        return flow_grid
 
 
-class Flow2DVF(nn.Module):
+class Flow2Warp(nn.Module):
 
     def __init__(self, device=None):
         super().__init__()
@@ -227,18 +227,18 @@ class Flow2DVF(nn.Module):
 
     def forward(self, flow_grid, out_shape=None):
         """
-        convert flow_grid to dvf of torch
-        - dvf = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
+        convert flow_grid (nnf.grid_sample's parameter) to Warp
+        - warp_percentage = (B, H, W, (D), 2 or 3) -> contains information of pixel percentage movement of each position
                 e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
-        - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
+        - warp_pixel = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
         - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
-        - grid = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
+        - flow_pixel (dvf) = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
         
         Args:
             flow_grid (torch.tensor): (B, H, W, (D), 2 or 3) range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
             out_shape (array like): (H, W, (D)), shape of the output
         Output:
-            dvf (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
+            warp_percentage (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
         """
         
         in_shape = flow_grid.shape[1:-1]
@@ -262,5 +262,5 @@ class Flow2DVF(nn.Module):
         # 3. resize the flow_grid
         if warp.shape != out_shape:
             warp = resize_channel_last(warp, out_shape)
-        dvf = warp2dvf(warp, device=self.device, dtype=flow_grid.dtype)
-        return dvf
+        warp_percentage = warp_pixel2percentage(warp, device=self.device, dtype=flow_grid.dtype)
+        return warp_percentage

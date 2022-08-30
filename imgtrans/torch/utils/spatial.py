@@ -5,10 +5,11 @@ from .resize import resize
 
 
 class DrawPerlin(nn.Module):
-    def __init__(self, requires_grad=False):
+    def __init__(self, requires_grad=False, device=None):
         super().__init__()
         self.requires_grad_(requires_grad)
         self.requires_grad = requires_grad
+        self.device = device
         pass
     
     def forward(self, 
@@ -45,6 +46,7 @@ class DrawPerlin(nn.Module):
             dtype: Output data type.
             seed: Integer for reproducible randomization. 
         '''
+        device = device or self.device
         # out_shape = torch.tensor(out_shape, dtype=torch.int32)
         if np.isscalar(scales):
             scales = [scales]

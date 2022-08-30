@@ -19,6 +19,7 @@ class RandPerlin(nn.Module):
         self.max_std = max_std
         self.requires_grad = requires_grad
         self.device = device
+        self.draw_perlin = DrawPerlin(requires_grad=self.requires_grad, device=self.device)
         self.dvf2flow = DVF2Flow(requires_grad=self.requires_grad, device=self.device)
         pass
 
@@ -42,13 +43,13 @@ class RandPerlin(nn.Module):
 
         ndim = len(out_shape)
 
-        perlin_dvf = DrawPerlin(requires_grad=self.requires_grad)(out_shape=(*out_shape, ndim),
-                                  scales=self.scales,
-                                  min_std=self.min_std,
-                                  max_std=self.max_std,
-                                  dtype=dtype,
-                                  device=img.device,
-                                  seed=seed)
+        perlin_dvf = self.draw_perlin(out_shape=(*out_shape, ndim),
+                                    scales=self.scales,
+                                    min_std=self.min_std,
+                                    max_std=self.max_std,
+                                    dtype=dtype,
+                                    device=img.device,
+                                    seed=seed)
 
         # convert range of warp from percentage of pixel moved (xvm.utils.transform)
         # to location of image from -1 to 1 (torch.nn.functional.grid_sample)
