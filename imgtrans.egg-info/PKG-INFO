@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 1.2
 Name: imgtrans
 Version: 0.0.1
 Summary: image transformation collection
@@ -6,11 +6,9 @@ Home-page: https://github.com/terryli710/Image-Transformation-Utils
 Author: Yiheng Li
 Author-email: yiheng@subtlemedical.com
 License: LICENSE.txt
+Description: UNKNOWN
 Platform: UNKNOWN
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Developers
 Classifier: License :: MIT License
 Requires-Python: >=3.7
-
-UNKNOWN
-

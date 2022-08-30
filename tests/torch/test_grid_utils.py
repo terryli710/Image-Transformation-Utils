@@ -12,12 +12,12 @@ class TestGridUtils(unittest.TestCase):
 
     DIRPATH = os.path.dirname(os.path.realpath(__file__))
 
-    def test_dvf2flow_grid(self):
+    def test_Warp2Flow_grid(self):
         import imgtrans as imt
 
         # test if flow_grid is correctly generated from dvf
         dvf = torch.zeros((5, 5, 2))
-        flow_grid = imt.torch.utils.grid_utils.dvf2flow_grid(dvf[None, ...])
+        flow_grid = imt.torch.utils.grid_utils.Warp2Flow_grid(dvf[None, ...])
         synth_flow_grid = torch.stack(torch.meshgrid(torch.linspace(-1, 1, 5),
                                                      torch.linspace(-1, 1, 5),
                                                      indexing="xy"),
@@ -74,12 +74,12 @@ class DebugGridUtils:
         pass
 
 
-    def debug_dvf2flow_grid(self):
+    def debug_Warp2Flow_grid(self):
         import imgtrans as imt
 
         # test if flow_grid is correctly generated from dvf
         dvf = torch.zeros((5, 5, 5, 3))
-        flow_grid = imt.torch.utils.grid_utils.dvf2flow_grid(dvf[None, ...])
+        flow_grid = imt.torch.utils.grid_utils.Warp2Flow_grid(dvf[None, ...])
         synth_flow_grid = torch.stack(torch.meshgrid(torch.linspace(-1, 1, 5),
                                                      torch.linspace(-1, 1, 5),
                                                      torch.linspace(-1, 1, 5),
@@ -87,22 +87,22 @@ class DebugGridUtils:
                                       dim=-1)
 
         assert np.array_equal(synth_flow_grid[None, ...], flow_grid)
-        print("debug_dvf2flow_grid passed")
+        print("debug_Warp2Flow_grid passed")
         pass
 
-    def debug_dvf2flow_grid_2d(self):
+    def debug_Warp2Flow_grid_2d(self):
         import imgtrans as imt
 
         # test if flow_grid is correctly generated from dvf
         dvf = torch.zeros((5, 5, 2))
-        flow_grid = imt.torch.utils.grid_utils.dvf2flow_grid(dvf[None, ...])
+        flow_grid = imt.torch.utils.grid_utils.Warp2Flow_grid(dvf[None, ...])
         synth_flow_grid = torch.stack(torch.meshgrid(torch.linspace(-1, 1, 5),
                                                      torch.linspace(-1, 1, 5),
                                                      indexing="xy"),
                                       dim=-1)
         
         assert np.array_equal(synth_flow_grid[None, ...], flow_grid)
-        print("debug_dvf2flow_grid_2d passed")
+        print("debug_Warp2Flow_grid_2d passed")
         pass
 
 
@@ -124,6 +124,6 @@ if __name__ == '__main__':
     dgu = DebugGridUtils()
     dgu.debug_flow_grid2dvf_2d()
     dgu.debug_flow_grid2dvf()
-    dgu.debug_dvf2flow_grid_2d()
-    dgu.debug_dvf2flow_grid()
+    dgu.debug_Warp2Flow_grid_2d()
+    dgu.debug_Warp2Flow_grid()
     pass

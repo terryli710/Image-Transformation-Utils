@@ -12,24 +12,11 @@ import imgtrans as imt
 # some minor util functions to convert to flow grid
 def convert_dvf(dvf, img_shape):
     """
-    dvf = (B, H, W, (D), 2 or 3)
+    warp_percentage = (B, H, W, (D), 2 or 3), percentage of pixel moved
     img_shape = tuple(H, W, (D))
-    convert dvf to flow grid
+    convert warp to flow grid
     """
-    return imt.utils.grid_utils.dvf2flow_grid(dvf)
-
-
-def warp2dvf(warp, img_shape):
-    """
-    convert warp to dvf
-    rescale warp to percentage of pixel moved
-    - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
-    - dvf = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
-    img_shape = tuple(H, W, (D))
-    """
-    # TODO: implement these functions and implement SpatialTransformer
-    # TODO: test the spatial transformer
-    return warp / img_shape.reshape(*[1] * (len(img_shape) + 1), len(img_shape))
+    return imt.utils.grid_utils.warp2flow_grid(dvf)
 
 
 def convert_warp(warp, img_shape):
@@ -40,8 +27,8 @@ def convert_warp(warp, img_shape):
     - flow_grid = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
     img_shape = tuple(H, W, (D))
     """
-    dvf = warp2dvf(warp, img_shape)
-    return imt.utils.grid_utils.dvf2flow_grid(dvf, img_shape)
+    dvf = imt.utils.grid_utils.warp_pixel2percentage(warp, img_shape)
+    return imt.utils.grid_utils.warp2flow_grid(dvf, img_shape)
 
 
 def convert_grid(grid, img_shape):
@@ -56,7 +43,7 @@ def convert_grid(grid, img_shape):
     return flow_grid
 
 
-CONVERT_DICT = {"dvf": convert_dvf, "warp": warp2dvf, "grid": convert_grid, "flow_grid": convert_warp}
+# CONVERT_DICT = {"dvf": convert_dvf, "warp": warp2dvf, "grid": convert_grid, "flow_grid": convert_warp}
 
 
 class SpatialTransformer(nn.Module):
@@ -65,13 +52,13 @@ class SpatialTransformer(nn.Module):
     """
 
     def __init__(self, 
-                 matrix_type: str, 
+                #  matrix_type: str, 
                  mode="bilinear",
                  padding_mode="zeros",
                  align_corners=True,
                  **kwargs):
         """
-        matrix_type: "warp", "grid", "affine_mtx", "dvf", "flow_grid"
+        # matrix_type: "warp", "grid", "affine_mtx", "dvf", "flow_grid"
         - dvf = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
             e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
         - warp = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
@@ -83,21 +70,23 @@ class SpatialTransformer(nn.Module):
         """
         super().__init__()
         self.matrix_type = matrix_type
-        self.convert_func = CONVERT_DICT[matrix_type]
+        # self.convert_func = CONVERT_DICT[matrix_type]
         self.kwargs = {"mode": mode, "padding_mode": padding_mode, "align_corners": align_corners, **kwargs}
         pass
 
     def forward(self, img: torch.Tensor, matrix: torch.Tensor, **kwargs):
         """
         img = (B, C, H, W, (D))
-        matrix = (B, H, W, (D), ndim)
+        matrix = (B, H, W, (D), ndim) has to be pytorch tensor [-1, 1]
+        TODO: support other matrix types
         """
 
         # some assertions
         assert img.shape[2:] == matrix.shape[1:-1], "img and matrix should have the same shape"
         assert img.shape[0] == matrix.shape[0], "img and matrix should have the same batch size"
         assert matrix.shape[-1] == len(img.shape) - 2, f"matrix have {matrix.shape[-1]} dims but got image size = {img.shape}"
-        flow_grid = self.convert_func(matrix, img.shape[2:])
+        # flow_grid = self.convert_func(matrix, img.shape[2:])
+        flow_grid = matrix
         # update self.kwargs with kwargs
         kwargs = {**self.kwargs.copy(), **(kwargs or {})}
         deformed_img = F.grid_sample(input=img,

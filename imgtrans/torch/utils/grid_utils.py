@@ -84,7 +84,7 @@ class Resample(nn.Module):
         Args:
             img: shape must be (num_channels, H, W[, D]).
             grid: shape must be (3, H, W) for 2D or (4, H, W, D) for 3D.
-            NOTE: this grid is offcially define in the dvf2flow_grid function
+            NOTE: this grid is offcially define in the Warp2Flow_grid function
             mode: {``"bilinear"``, ``"nearest"``}
                 Interpolation mode to calculate output values. Defaults to ``self.mode``.
                 See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample

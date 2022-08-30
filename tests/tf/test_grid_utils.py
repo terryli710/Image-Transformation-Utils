@@ -15,7 +15,7 @@ class TestGridUtils(unittest.TestCase):
 
         # test if flow_grid is correctly generated from dvf
         dvf = tf.zeros((5, 5, 2))
-        flow_grid = imt.tf.utils.grid_utils.dvf2flow_grid(dvf)
+        flow_grid = imt.tf.utils.grid_utils.Warp2Flow_grid(dvf)
         synth_flow_grid = tf.stack(tf.meshgrid(tf.linspace(-1, 1, 5), 
                                       tf.linspace(-1, 1, 5)), axis=-1)
 

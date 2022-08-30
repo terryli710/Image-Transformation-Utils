@@ -2,10 +2,10 @@ import tensorflow as tf
 from .resize import resize_channel_last
 
 
-def dvf2flow_grid(dvf, out_shape=None):
+def warp2flow_grid(dvf, out_shape=None):
     """
     convert dvf to flow_grid of torch
-    dvf = (H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
+    warp_percentage = (H, W, (D), 2 or 3) -> contains information of pixel percentage movement of each position
     e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis for 10 percent of pixels
 
     flow_grid = (H, W, (D), 2 or 3)  range from [-1, 1], for more info see torch.nn.functional.grid_sample
@@ -31,10 +31,10 @@ def dvf2flow_grid(dvf, out_shape=None):
 
 
 
-def flow_grid2dvf(flow_grid, out_shape=None):
+def flow_grid2warp(flow_grid, out_shape=None):
     """
     convert dvf to flow_grid of torch
-    dvf = (H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
+    warp_percentage = (H, W, (D), 2 or 3) -> contains information of pixel percentage movement of each position
     e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis for 10 percent of pixels
 
     flow_grid = (H, W, (D), 2 or 3)  range from [-1, 1], for more info see torch.nn.functional.grid_sample

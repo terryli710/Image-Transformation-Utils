@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils.grid_utils import DVF2Flow
+from .utils.grid_utils import Warp2Flow
 from .utils.spatial import DrawPerlin
 
 
@@ -20,7 +20,7 @@ class RandPerlin(nn.Module):
         self.requires_grad = requires_grad
         self.device = device
         self.draw_perlin = DrawPerlin(requires_grad=self.requires_grad, device=self.device)
-        self.dvf2flow = DVF2Flow(requires_grad=self.requires_grad, device=self.device)
+        self.warp2flow = Warp2Flow(requires_grad=self.requires_grad, device=self.device)
         pass
 
     def forward(
@@ -56,7 +56,7 @@ class RandPerlin(nn.Module):
         # NOTE: perlin_dvf is a DVF that denotes the percentage of displacement
         # while flow_grid is a flow field that denotes the location of image
         # add batch dim to dvf
-        flow_grid = self.dvf2flow(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
+        flow_grid = self.warp2flow(perlin_dvf[None, ...], out_shape) # dvf shape: (1, H, W, (D), 2 or 3), out_shape: (H, W, (D))
         # add batch dim to flow_grid
         flow_grid = flow_grid.repeat(img.shape[0], *[1] * (ndim + 1)).type_as(img)
 

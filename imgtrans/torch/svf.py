@@ -5,7 +5,7 @@
 import torch
 import torch.nn.functional as nnf
 from .utils.spatial import DrawPerlin
-from .utils.grid_utils import DVF2Flow
+from .utils.grid_utils import Warp2Flow
 
 
 class SVFTransform:
@@ -41,7 +41,7 @@ class SVFTransform:
         if not out_shape:
             out_shape = img.shape[1:]
         # convert range from percentage to -1, 1
-        flow_svf = DVF2Flow()(svf, out_shape)
+        flow_svf = Warp2Flow()(svf, out_shape)
         img_copy = img.clone().unsqueeze(0).type(torch.float32) # have to create another dim for grid_sample
         for i in range(self.nsteps):
             img_copy = nnf.grid_sample(
@@ -201,7 +201,7 @@ class RandSVFTransform(SVFTransform):
 #                           seed=seed)
 #         return super().forward(svf)
 
-# # class DVF2FlowGrid(nn.Module):
+# # class Warp2FlowGrid(nn.Module):
 # #     # convert a SVF matrix to a flow grid (range = (-1, 1))
 
 # #     def __init__(self, channel_last=False, pixel_range=(-1, 1)):
