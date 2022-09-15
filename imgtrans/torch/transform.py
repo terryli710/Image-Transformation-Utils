@@ -52,7 +52,7 @@ class SpatialTransformer(nn.Module):
     """
 
     def __init__(self, 
-                #  matrix_type: str, 
+                 # matrix_type: str, 
                  mode="bilinear",
                  padding_mode="zeros",
                  align_corners=True,
@@ -69,7 +69,7 @@ class SpatialTransformer(nn.Module):
         kwargs: for grid_sample: mode, padding_mode, align_corners
         """
         super().__init__()
-        self.matrix_type = matrix_type
+        # self.matrix_type = matrix_type
         # self.convert_func = CONVERT_DICT[matrix_type]
         self.kwargs = {"mode": mode, "padding_mode": padding_mode, "align_corners": align_corners, **kwargs}
         pass
