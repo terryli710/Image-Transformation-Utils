@@ -2,7 +2,7 @@
 
 A collection of 2D/3D image random/fixed transformation functions in `NumPy`, `TensorFlow` and `PyTorch` backends.
 
-Author: Yiheng Li (li.terry710@gmail.com)
+Author: Yiheng Li
 
 ## Installation
 
