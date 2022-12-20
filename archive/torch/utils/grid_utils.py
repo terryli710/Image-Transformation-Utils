@@ -123,33 +123,6 @@ class Resample(nn.Module):
         return torch.as_tensor(out)
 
 
-def resample(data: torch.Tensor, grid: torch.Tensor, **kwargs):
-    """
-    Args:
-        data: ((B dims), (C dims), H, W[, D])
-        grid: ((B dims), H, W[, D], 2 or 3)
-        where:
-            (B dims) is arbitrary batch dimensions, if it's the same for data and grid, 
-            then each data is resampled with the corresponding grid.
-            if data has more batch dims than grid, then those are converted to be channels (C dims), 
-            which will be resampled with the same grid.
-    """
-    ndim: int = grid.shape[-1]
-    batch_size: torch.Size = grid.shape[:-ndim - 1]
-    spatial_size: torch.Size = grid.shape[-ndim - 1:-1]
-    assert batch_size == data.shape[:-ndim - 1], f"batch dims must be the same for grid and data, but got {batch_size} and {data.shape[:-ndim - 1]}"
-    assert spatial_size == data.shape[-ndim - 1:-1], f"spatial dims must be the same for grid and data, but got {spatial_size} and {data.shape[-ndim - 1:-1]}"
-    # check if there's channel_size
-    if len(data.shape) > len(grid.shape):
-        channel_size: torch.Size = data.shape[-ndim - 2:-ndim - 1]
-    else:
-        channel_size = torch.Size([1])
-    # reshape data to (B, C, H, W[, D]), grid to (B, H, W[, D], 2 or 3)
-    data = data.reshape(*batch_size, *channel_size, *spatial_size)
-    grid = grid.reshape(*batch_size, *spatial_size, ndim)
-    return torch.nn.functional.grid_sample(input=data, grid=grid, **kwargs)
-
-
 def get_mesh(mesh_shape, batch_size=1, device=None, dtype=torch.float):
     """ 
     create a  meshgrid of shape `shape` 
