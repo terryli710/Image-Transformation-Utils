@@ -12,6 +12,59 @@ from imgtrans.utils.aff_mtx import (_create_rotate, _create_scale,
                                     _create_shear, _create_translate)
 
 
+class AffineKeyPoints(torch.nn.Module):
+    """
+    Affine transform keypoint coordinates
+    """
+    
+    def __init__(self, 
+                 device=None) -> None:
+        super().__init__()
+        """
+        Defaults are all Nones, because the forward method is called with the
+        kps where we can extract all the information
+        """
+        pass
+
+    def forward(self, kps, aff_mtx):
+        """
+        Args:
+            kps = ((*batch_size), nkps (like channel), ndim)
+            aff_mtx = ((*batch_size), ndim(+1), ndim+1)
+        """
+        
+        # initialize some parameters
+        batch_size, nkps, ndim = kps.shape[:-2], kps.shape[-2], kps.shape[-1]
+        device = kps.device
+        # assert aff_mtx's shape is correct
+        assert aff_mtx.shape[-2] in [ndim, ndim+1] and aff_mtx.shape[-1] == ndim + 1, \
+            "affine matrix shape is incorrect, should be (*batch_size, ndim+1, ndim+1), but got {}".format(aff_mtx.shape)
+        assert aff_mtx.shape[:-2] == batch_size, \
+            f"affine matrix shape is incorrect, batch_size should be {batch_size}, but got {aff_mtx.shape[:-2]}"
+        
+        # convert kps to shape (B, ndim, nkps)
+        kps = kps.view(-1, nkps, ndim).permute(0, 2, 1)
+        B = kps.shape[0]
+        
+        # if 2D, needs to flip the x and y axis
+        if ndim == 2:
+            kps = torch.flip(kps, dims=[1])
+
+        # compute the affine transformation
+        kps_copy = kps.clone()
+        ones = torch.ones(B, 1, nkps).to(device)
+        kps_copy = torch.cat([kps_copy, ones], 1)
+        result_kps = torch.bmm(aff_mtx[:, :ndim, :], kps_copy)
+        
+        # if 2D, needs to flip the x and y axis back
+        if ndim == 2:
+            result_kps = torch.flip(result_kps, dims=[1])
+            
+        # convert result_kps to shape ((*batch_size), nkps, ndim)
+        result_kps = result_kps.permute(0, 2, 1).view((*batch_size, nkps, ndim))
+        return result_kps
+
+
 class AffineTransform(torch.nn.Module):
     
     def __init__(self, **resample_kwargs):

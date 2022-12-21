@@ -1,126 +1,5 @@
-from typing import List, Optional, Sequence
-
-import numpy as np
+from typing import Union
 import torch
-from torch.nn.functional import grid_sample
-import torch.nn as nn
-
-from .resize import resize_channel_last
-
-
-def create_control_grid(spatial_shape, spacing, homogeneous=True, dtype=float, device=None):
-    """
-    control grid with two additional point in each direction
-    """
-    grid_shape = []
-    for d, s in zip(spatial_shape, spacing):
-        d = int(d)
-        if d % 2 == 0:
-            grid_shape.append(np.ceil((d - 1.) / (2. * s) + 0.5) * 2. + 2.)
-        else:
-            grid_shape.append(np.ceil((d - 1.) / (2. * s)) * 2. + 3.)
-    # grid_shape = (H+4, W+4, D+4), spacing=(Hs, Ws, Ds)
-    return create_grid(grid_shape, spacing, homogeneous, dtype, device=device)
-
-
-def create_grid(
-    spatial_size: Sequence[int],
-    spacing: Optional[Sequence[float]] = None,
-    homogeneous: bool = True,
-    dtype=torch.float32,
-    device: Optional[torch.device] = None,
-):
-    """
-    compute a `spatial_size` mesh with the torch API.
-    """
-    spacing = spacing or tuple(1.0 for _ in spatial_size)
-    ranges = [
-        torch.linspace(-(d - 1.0) / 2.0 * s, (d - 1.0) / 2.0 * s,
-                       int(d),
-                       device=device,
-                       dtype=dtype) for d, s in zip(spatial_size, spacing)
-    ]
-    coords = torch.meshgrid(*ranges, indexing="ij")
-    if not homogeneous:
-        return torch.stack(coords)
-    return torch.stack([*coords, torch.ones_like(coords[0])])
-
-
-class Resample(nn.Module):
-
-    def __init__(
-        self,
-        mode: str = "bilinear",
-        padding_mode: str = "reflection",
-        device: Optional[torch.device] = None,
-    ):
-        """
-        computes output image using values from `img`, locations from `grid` using pytorch.
-        supports spatially 2D or 3D (num_channels, H, W[, D]).
-
-        Args:
-            mode: {``"bilinear"``, ``"nearest"``}
-                Interpolation mode to calculate output values. Defaults to ``"bilinear"``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-            padding_mode: {``"zeros"``, ``"border"``, ``"reflection"``}
-                Padding mode for outside grid values. Defaults to ``"border"``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-            as_tensor_output: whether to return a torch tensor. Defaults to False.
-            device: device on which the tensor will be allocated.
-        """
-        super().__init__()
-        self.mode = mode
-        self.padding_mode = padding_mode
-        self.device = device
-
-    def forward(
-        self,
-        img: torch.Tensor,
-        grid: Optional[torch.Tensor] = None,
-        mode: Optional[str] = None,
-        padding_mode: Optional[str] = None,
-    ):  # -> Union[np.ndarray, torch.Tensor]:
-        """
-        Args:
-            img: shape must be (num_channels, H, W[, D]).
-            grid: shape must be (3, H, W) for 2D or (4, H, W, D) for 3D.
-            NOTE: this grid is offcially define in the Warp2Flow_grid function
-            mode: {``"bilinear"``, ``"nearest"``}
-                Interpolation mode to calculate output values. Defaults to ``self.mode``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-            padding_mode: {``"zeros"``, ``"border"``, ``"reflection"``}
-                Padding mode for outside grid values. Defaults to ``self.padding_mode``.
-                See also: https://pytorch.org/docs/stable/nn.functional.html#grid-sample
-        """
-
-        assert isinstance(
-            img, torch.Tensor), "input img must be supplied as a torch.Tensor"
-        assert isinstance(
-            grid, torch.Tensor
-        ), "Error, grid argument must be supplied as a torch.Tensor"
-
-        grid = (torch.tensor(grid) if not isinstance(grid, torch.Tensor) else
-                grid.detach().clone())
-        if self.device:
-            img = img.to(self.device)
-            grid = grid.to(self.device)
-        # convert warp to flow_grid (defined by torch.nn.functional.grid_sample)
-        for i, dim in enumerate(img.shape[1:]):
-            grid[i] = 2.0 * grid[i] / (dim - 1.0)
-
-        grid = grid[:-1] / grid[-1:]
-        index_ordering: List[int] = list(range(img.ndimension() - 2, -1, -1))
-        grid = grid[index_ordering]
-        grid = grid.permute(list(range(grid.ndimension()))[1:] + [0])
-        out = grid_sample(
-            img.unsqueeze(0).float(),
-            grid.unsqueeze(0).float(),
-            mode=self.mode if mode is None else mode,
-            padding_mode=self.padding_mode
-            if padding_mode is None else padding_mode,
-            align_corners=False,  # NOTE: guess not much difference: https://discuss.pytorch.org/t/what-we-should-use-align-corners-false/22663/9
-        )[0]
-        return torch.as_tensor(out)
 
 
 def resample(data: torch.Tensor, grid: torch.Tensor, **kwargs):
@@ -137,157 +16,124 @@ def resample(data: torch.Tensor, grid: torch.Tensor, **kwargs):
     ndim: int = grid.shape[-1]
     batch_size: torch.Size = grid.shape[:-ndim - 1]
     spatial_size: torch.Size = grid.shape[-ndim - 1:-1]
-    assert batch_size == data.shape[:-ndim - 1], f"batch dims must be the same for grid and data, but got {batch_size} and {data.shape[:-ndim - 1]}"
-    assert spatial_size == data.shape[-ndim - 1:-1], f"spatial dims must be the same for grid and data, but got {spatial_size} and {data.shape[-ndim - 1:-1]}"
-    # check if there's channel_size
-    if len(data.shape) > len(grid.shape):
-        channel_size: torch.Size = data.shape[-ndim - 2:-ndim - 1]
-    else:
-        channel_size = torch.Size([1])
+    channel_size: torch.Size = data.shape[len(batch_size):-ndim]
+    data_batch_size, data_spatial_size = data.shape[:len(batch_size)], data.shape[-ndim:]
+    
+    assert batch_size == data_batch_size, f"batch dims must be the same for grid and data, but got {batch_size} and {data.shape[:-ndim - 1]}"
+    assert spatial_size == data_spatial_size, f"spatial dims must be the same for grid and data, but got {spatial_size} and {data.shape[-ndim - 1:-1]}"
+    
     # reshape data to (B, C, H, W[, D]), grid to (B, H, W[, D], 2 or 3)
-    data = data.reshape(*batch_size, *channel_size, *spatial_size)
-    grid = grid.reshape(*batch_size, *spatial_size, ndim)
-    return torch.nn.functional.grid_sample(input=data, grid=grid, **kwargs)
+    data = data.reshape(torch.prod(torch.tensor(batch_size)), 
+                        torch.prod(torch.tensor(channel_size)), 
+                        *spatial_size)
+    grid = grid.reshape(torch.prod(torch.tensor(batch_size)),
+                        *spatial_size,
+                        ndim)
+    resampled_data = torch.nn.functional.grid_sample(input=data, grid=grid, **kwargs)
+    resampled_data = resampled_data.reshape(*batch_size, *channel_size, *spatial_size)
+    return resampled_data
 
 
-def get_mesh(mesh_shape, batch_size=1, device=None, dtype=torch.float):
+def get_mesh(mesh_shape, device=None, dtype=torch.float):
     """ 
     create a  meshgrid of shape `shape` 
     mesh_shape: (H, W[, D])
+    Returns:
+        mesh: (H, W[, D], 2 or 3)
     """
     ndims = len(mesh_shape)
     ls = [torch.arange(0, s).to(device).to(dtype) for s in mesh_shape]
     # NOTE: indexing = "xy" doesn't work for 3D cases
     # so just using torch.flip with "ij" indexing
     mesh = torch.stack(torch.meshgrid(*ls, indexing="ij")[::-1], axis=-1) # (H, W, (D), 2 or 3)
-    # repeat mesh to match batch size
-    mesh = mesh.repeat(batch_size, *([1] * (ndims + 1)))
     return mesh
 
 
-def warp_pixel2percentage(warp, device=None, dtype=torch.float):
+def rescale_grid(grid: torch.Tensor, orig_range, new_range):
     """
-    warp_pixel: (N, H, W[, D], 2 or 3), contains pixel movements in each direction
-    return:
-        warp_percentage: contains percentage information of each pixel movement
-    need to rescale the warp, 1% movement = 1 * (H, W, D) pixels
+    Rescale grid from orig_range to new_range
+    Args:
+        grid: (..., H, W[, D], 2 or 3)
+        orig_range: (min, max) or [(min, max), (min, max), ...] or "pixel" or "percentage"
+        new_range: (min, max) or [(min, max), (min, max), ...] or "pixel" or "percentage"
+    Returns:
+        grid: (..., H, W[, D], 2 or 3), with values in new_range
     """
-    assert warp.shape[-1] in (2, 3), "warp must have shape (N, H, W[, D], 2 or 3)"
-    # b = warp.shape[0]
-    size = warp.shape[1:-1]
-    # ndim = warp.shape[-1]
-    # rescale warp from percentage to pixel movements
-    warp = warp / torch.tensor(size, dtype=dtype, device=device) * 100
-    return warp
+    ndim = grid.shape[-1]
+    spatial_dims = grid.shape[-ndim - 1:-1]
+    # ranges -> (ndim, 2)
+    orig_range = process_range(orig_range, spatial_dims)
+    new_range = process_range(new_range, spatial_dims)
+    orig_range = torch.tensor(orig_range, device=grid.device, dtype=grid.dtype)
+    new_range = torch.tensor(new_range, device=grid.device, dtype=grid.dtype)
+    
+    # asser the range shapes are valid
+    assert orig_range.shape == new_range.shape == (ndim, 2), f"orig_range and new_range must be of shape ({ndim}, 2), but got {orig_range.shape} and {new_range.shape}"
+
+    
+    # scale on the last dimension
+    times  = (new_range[:, 1] - new_range[:, 0]) / (orig_range[:, 1] - orig_range[:, 0])
+    add    = new_range[:, 0]
+    grid = grid * times.reshape(*[1] * (len(grid.shape) - 1), ndim) + add.reshape(*[1] * (len(grid.shape) - 1), ndim)
+    return grid # (..., H, W[, D], 2 or 3)
 
 
-def warp_percentage2pixel(dvf, device=None, dtype=torch.float):
+def process_range(val_range, spatial_dims):
     """
-    warp_percentage: (N, H, W[, D], 2 or 3), contains percentage information of each pixel movement
-    return:
-        warp_pixel: contains pixel movements in each direction
-    need to rescale the warp, 1% movement = 1 * (H, W, D) pixels
+    Args:
+        val_range: (min, max) or [(min, max), (min, max), ...] or "pixel" or "percentage"
+    Returns:
+        val_range: [(min, max), (min, max), ...]
     """
-    assert dvf.shape[-1] in (2, 3), "dvf must have shape (N, H, W[, D], 2 or 3)"
-    # b = dvf.shape[0]
-    size = dvf.shape[1:-1]
-    # ndim = dvf.shape[-1]
-    # rescale warp from percentage to pixel movements
-    warp = dvf * torch.tensor(size, dtype=dtype, device=device if device else dvf.device) / 100
-    return warp
+    if val_range == "pixel":
+        val_range = [(0, s) for s in spatial_dims]
+    elif val_range == "percentage":
+        val_range = [(0, 100) for _ in spatial_dims]
+    elif isinstance(val_range, (tuple, list)):
+        if len(val_range) == 2 and isinstance(val_range[0], (int, float)):
+            val_range = [val_range for _ in spatial_dims]
+        else:
+            assert len(val_range) == len(spatial_dims), f"val_range must be of length 2 or {len(spatial_dims)}, but got {len(val_range)}"
+    else:
+        raise ValueError(f"val_range must be (min, max) or [(min, max), (min, max), ...] or 'pixel' or 'percentage', but got {val_range}")
+    return val_range
 
 
-class Warp2Flow(nn.Module):
-
-    def __init__(self, requires_grad=False, device=None):
-        super().__init__()
-        self.requires_grad_(requires_grad)
-        self.device = device
-        pass
-
-    def forward(self, warp_percentage, out_shape=None):
-        
-        """
-        convert warp_percentage to flow_grid of torch
-        - warp_percentage = (B, H, W, (D), 2 or 3) -> contains information of pixel pertange movement of each position
-                e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
-        - warp_pixel = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
-        - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
-        - flow_pixel (dvf) = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
-        
-        Args:
-            dvf (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
-            out_shape (array like): (H, W, (D)), shape of the output
-        Output:
-            flow_grid (torch.tensor): (B, H, W, (D), 2 or 3) denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
-        """
-        in_shape = warp_percentage.shape[1:-1]
-        batch_size = warp_percentage.shape[0]
-        # ndims = warp_percentage.shape[-1]
-
-        if not out_shape:
-            out_shape = in_shape
-        warp = warp_percentage2pixel(warp_percentage, device=self.device, dtype=warp_percentage.dtype)
-        mesh = get_mesh(mesh_shape=in_shape, 
-                        batch_size=batch_size, 
-                        device=self.device, 
-                        dtype=warp_percentage.dtype)
-
-        # 2. scale -> from -1 to 1, (max1 - min - 1 = 2)
-        assert mesh.shape == warp.shape, "mesh and dvf must have the same shape"
-        flow_grid = (mesh + warp)
-        for i in range(len(in_shape)):
-            flow_grid[..., i] = 2 * (flow_grid[..., i] / (in_shape[i] - 1) - 0.5)
-
-        # 3. resize the flow_grid
-        if flow_grid.shape != out_shape:
-            flow_grid = resize_channel_last(flow_grid, out_shape) # flow_grid (B, H, W, (D), 2 or 3)
-        return flow_grid
+def pos2mov_grid(pos_grid: torch.Tensor, val_range=Union[str, tuple]):
+    """
+    Args:
+        pos_grid: (..., H, W[, D], 2 or 3), contains positions of each pixel
+        val_range: either a tuple of (min, max) e.g. (-1, 1) or "pixel" or "percentage"
+    """
+    ndim = pos_grid.shape[-1]
+    spatial_dims = pos_grid.shape[-ndim - 1:-1]
+    mesh = get_mesh(spatial_dims, device=pos_grid.device, dtype=pos_grid.dtype)
+    
+    # deal with val_range
+    mesh_range = [(0, s) for s in spatial_dims]
+    
+    mesh = rescale_grid(mesh, mesh_range, val_range)
+    
+    # pos_grid.shape = (..., H, W[, D], 2 or 3), mesh.shape = (H, W[, D], 2 or 3)
+    return pos_grid - mesh
 
 
-class Flow2Warp(nn.Module):
-
-    def __init__(self, device=None):
-        super().__init__()
-        self.device = device
-        pass
-
-    def forward(self, flow_grid, out_shape=None):
-        """
-        convert flow_grid (nnf.grid_sample's parameter) to Warp
-        - warp_percentage = (B, H, W, (D), 2 or 3) -> contains information of pixel percentage movement of each position
-                e.g. -10 in (x, y, z, 1) means that pixel in poistion (x, y, z) needs to move to the left of X-axis (1) for 10 percent of pixels.
-        - warp_pixel = (B, H, W, (D), 2 or 3) -> contains information of pixel movement of each position, so need to be rescaled if want to use it.
-        - flow_grid = (B, H, W, (D), 2 or 3) -> range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
-        - flow_pixel (dvf) = (B, H, W, (D), 2 or 3) -> denotes the positions, but as the unit is the dimension of the image, so need to be rescaled if want to use it.
-        
-        Args:
-            flow_grid (torch.tensor): (B, H, W, (D), 2 or 3) range from [-1, 1], denotes not the movement, but the positions of the pixels, for more info see torch.nn.functional.grid_sample.
-            out_shape (array like): (H, W, (D)), shape of the output
-        Output:
-            warp_percentage (torch.tensor): (B, H, W, (D), 2 or 3) a matrix contains information of pixel pertange movement of each position
-        """
-        
-        in_shape = flow_grid.shape[1:-1]
-        batch_size = flow_grid.shape[0]
-        # ndims = flow_grid.shape[-1]
-
-        if not out_shape:
-            out_shape = in_shape
-        mesh = get_mesh(mesh_shape=in_shape, 
-                        batch_size=batch_size, 
-                        device=self.device, 
-                        dtype=flow_grid.dtype)
-
-        # 2. scale -> from 0 to 99
-        assert mesh.shape == flow_grid.shape, "mesh and flow_grid must have the same shape"
-        flow = (flow_grid / 2 + 0.5)
-        for i in range(len(in_shape)):
-            flow[..., i] = flow[..., i] * (in_shape[i] - 1) # NOTE percentage of movement
-        warp = flow - mesh
-
-        # 3. resize the flow_grid
-        if warp.shape != out_shape:
-            warp = resize_channel_last(warp, out_shape)
-        warp_percentage = warp_pixel2percentage(warp, device=self.device, dtype=flow_grid.dtype)
-        return warp_percentage
+def mov2pos_grid(mov_grid: torch.Tensor, val_range=Union[str, tuple]):
+    """
+    Args:
+        mov_grid: (..., H, W[, D], 2 or 3), contains movements of each pixel
+        val_range: either a tuple of (min, max) e.g. (-1, 1) or "pixel" or "percentage"
+    """
+    ndim = mov_grid.shape[-1]
+    spatial_dims = mov_grid.shape[-ndim - 1:-1]
+    mesh = get_mesh(spatial_dims, device=mov_grid.device, dtype=mov_grid.dtype)
+    
+    # deal with val_range
+    mesh_range = [(0, s) for s in spatial_dims]
+    
+    mesh = rescale_grid(mesh, mesh_range, val_range)
+    
+    # pos_grid.shape = (..., H, W[, D], 2 or 3), mesh.shape = (H, W[, D], 2 or 3)
+    return mov_grid + mesh
+    
+    

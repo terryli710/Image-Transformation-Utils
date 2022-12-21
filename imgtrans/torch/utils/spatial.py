@@ -1,93 +1,93 @@
-import torch
-from torch import nn
+from typing import Sequence, Union
 import numpy as np
-from .resize import resize
+import torch
+import torch.nn.functional as F
+from torch import nn
 
 
-class DrawPerlin(nn.Module):
-    def __init__(self, requires_grad=False, device=None):
+class GuassianFilter(nn.Module):
+    """
+    Perform Gaussian blur to an input tensor (2d or 3d) with an gaussian kernel.
+    """
+    def __init__(self, 
+                 ndim: int, 
+                 sigma: Union[Sequence[float], float],
+                 nchannel: int = 1,
+                 kernel_size: int = 5,
+                 requires_grad=False, 
+                 device=None):
         super().__init__()
         self.requires_grad_(requires_grad)
         self.requires_grad = requires_grad
+        self.ndim = ndim
+        self.nchannel = nchannel
         self.device = device
+        self.sigma = sigma
+        self.kernel_size = kernel_size
+        self.gaussian_kernel = self._create_gaussian_kernel()
+        # assert: if sigma is sequence, then len(sigma) == ndim
+        assert isinstance(self.sigma, (float, int)) or len(self.sigma) == self.ndim, f"sigma is {self.sigma}, ndim is {self.ndim}"
         pass
-    
-    def forward(self, 
-                out_shape,
-                scales,
-                min_std=0,
-                max_std=1,
-                dtype=torch.float32,
-                device=None,
-                seed=None):
-        '''
-        Generate Perlin noise by drawing from Gaussian distributions at different
-        resolutions, upsampling and summing. There are a couple of key differences
-        between this function and the Neurite equivalent ne.utils.perlin_vol, which
-        are not straightforwardly consolidated.
-        Neurite function:
-            (1) Iterates over scales in range(a, b) where a, b are input arguments.
-            (2) Noise volumes are sampled at resolutions vol_shape / 2**scale.
-            (3) Noise volumes are sampled uniformly in the interval [0, 1].
-            (4) Volume weights are {1, 2, ...N} (normalized) where N is the number
-                of scales, or sampled uniformly from [0, 1].
-        This function:
-            (1) Specific scales are passed as a list.
-            (2) Noise volumes are sampled at resolutions vol_shape / scale.
-            (3) Noise volumes are sampled normally, with SDs drawn uniformly from
-                [min_std, max_std].
-        Parameters:
-            out_shape: List defining the output shape. In N-dimensional space, it
-                should have N+1 elements, the last one being the feature dimension.
-            scales: List of relative resolutions at which noise is sampled normally.
-                A scale of 2 means half resolution relative to the output shape.
-            min_std: Minimum standard deviation (SD) for drawing noise volumes.
-            max_std: Maximum SD for drawing noise volumes.
-            dtype: Output data type.
-            seed: Integer for reproducible randomization. 
-        '''
-        device = device or self.device
-        # out_shape = torch.tensor(out_shape, dtype=torch.int32)
-        if np.isscalar(scales):
-            scales = [scales]
-        # set random seed, would work within the function
-        if seed is not None:
-            np.random.seed(seed)
-            torch.manual_seed(seed) 
-        out = torch.zeros(out_shape[-1], *out_shape[:-1], dtype=dtype).to(device) # channel last (H, W, (D), C)
-
-        for scale in scales:
-            scaled_shape = torch.tensor([s / scale for s in out_shape[:-1]]).to(torch.int32) # ceil is not diffientiable
-            sample_shape = (*scaled_shape, out_shape[-1])
-            std = torch.rand([1], requires_grad=self.requires_grad, device=device) * (max_std - min_std) + min_std
-            gauss = torch.randn(sample_shape, requires_grad=self.requires_grad, device=device, dtype=dtype) * std
-
-            # zoom = [o / s for o, s in zip(out_shape, sample_shape)]
-            
-            # scale gauss and add to out
-            if scale != 1:
-                # change to channel first
-                if len(sample_shape) == 3:
-                    # 2d
-                    gauss = gauss.permute(2, 0, 1)
-                elif len(sample_shape) == 4:
-                    # 3d
-                    gauss = gauss.permute(3, 0, 1, 2)
-                else:
-                    raise NotImplementedError(f"input dimension not supported: {sample_shape=}")
-                
-                gauss = resize(gauss.unsqueeze(0), # create batch dim
-                            target_size=out_shape[:-1])[0, ...]
-            
-            out = out + gauss
         
-        # channel last
-        if len(sample_shape) == 3:
-            # 2d
-            out = out.permute(1, 2, 0)
-        elif len(sample_shape) == 4:
-            # 3d
-            out = out.permute(1, 2, 3, 0)
+    
+    def _create_gaussian_kernel(self):
+        """
+        create a 2d or 3d gaussian kernel,
+        Returns:
+            gaussian_kernel: (C, C, *[kernel_size] * ndim)
+        """
+        if isinstance(self.sigma, (float, int)):
+            sigma = [self.sigma] * self.ndim
+        elif isinstance(self.sigma, Sequence):
+            assert len(self.sigma) == self.ndim
         else:
-            raise NotImplementedError
-        return out # shape = (H, W, (D), 2 or 3)
+            raise TypeError(f"sigma should be number or sequence, got {type(self.sigma)}")
+        
+        # create kernel
+        kernel_size = self.kernel_size
+        kernel = np.zeros([kernel_size] * self.ndim)
+        center = kernel_size // 2
+        for i in range(kernel_size):
+            for j in range(kernel_size):
+                if self.ndim == 2:
+                    kernel[i, j] = np.exp(-0.5 * ((i - center) ** 2 + (j - center) ** 2) / sigma[0] ** 2)
+                elif self.ndim == 3:
+                    for k in range(kernel_size):
+                        kernel[i, j, k] = np.exp(-0.5 * ((i - center) ** 2 + (j - center) ** 2 + (k - center) ** 2) / sigma[0] ** 2)
+                else:
+                    raise NotImplementedError(f"ndim should be 2 or 3, got {self.ndim}")
+        # normalize
+        kernel = kernel / np.sum(kernel)
+        # convert to tensor
+        kernel = torch.tensor(kernel, dtype=torch.float32, device=self.device)
+        # expand to ndim
+        kernel = kernel.unsqueeze(0).unsqueeze(0).expand(self.nchannel, self.nchannel, *([kernel_size] * self.ndim))
+        return kernel
+        
+    
+    def forward(self, x):
+        """
+        x: (..., C, H, W, (D)), the batch dims are arbitrary
+        weights: (C, C, kH, kW, (kD)), the in and out channels are the same
+        """
+        # reshape x to (N, C, H, W, (D))
+        batch_dims = x.shape[:-self.ndim - 1]
+        x_shape = x.shape
+        if len(batch_dims) == 0:
+            batch_dims = [1]
+        else:
+            batch_dims = torch.prod(torch.tensor(batch_dims)).tolist()
+        x = x.reshape(*batch_dims, *x.shape[-self.ndim - 1:])
+        
+        if self.ndim == 2:
+            x = F.conv2d(x, self.gaussian_kernel, padding="same")
+        elif self.ndim == 3:
+            x = F.conv3d(x, self.gaussian_kernel, padding="same")
+        else:
+            raise NotImplementedError(f"ndim should be 2 or 3, got {self.ndim}")
+        
+        # reshape x to original shape
+        x = x.reshape(*x_shape)
+        return x
+        
+        

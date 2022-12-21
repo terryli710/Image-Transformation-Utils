@@ -1,7 +1,8 @@
 # random utils
 
+from typing import List, Union
 import torch
-from imgtrans.utils.randomize import RandomFromInterval
+from imgtrans.utils.randomize import Interval, RandomFromInterval
 
 
 class RandomFromIntervalTorch(RandomFromInterval):
@@ -10,23 +11,25 @@ class RandomFromIntervalTorch(RandomFromInterval):
         torch.manual_seed(seed)
         pass
     
-    def sample(self, interval, nbatch=None):
+    def sample(self, intervals: Union[Interval, tuple, List[Union[Interval, tuple]]], nbatch=None):
         """
         Args:
-            interval: List[Interval, ...]
+            intervals: List[Interval, ...]
             nbatch: int
         Return:
             if nbatch: (B, ndim)
             if not nbatch: (ndim, )
         """
-        
+        intervals = self._construct_interval(intervals)
+        if isinstance(intervals, Interval):
+            intervals = [intervals]
         # convert intervals to torch tensor (ndim, 2)
-        interval = torch.tensor([[i.lower, i.upper] for i in interval])
+        intervals = torch.tensor([[i.lower, i.upper] for i in intervals])
         if nbatch is None:
             # (ndim, )
-            param = torch.rand(interval.shape[0]) * (interval[:, 1] - interval[:, 0]) + interval[:, 0]
+            param = torch.rand(intervals.shape[0]) * (intervals[:, 1] - intervals[:, 0]) + intervals[:, 0]
         else:
-            param = torch.rand((nbatch, interval.shape[0])) * (interval[:, 1] - interval[:, 0]) + interval[:, 0]
+            param = torch.rand((nbatch, intervals.shape[0])) * (intervals[:, 1] - intervals[:, 0]) + intervals[:, 0]
         
         if self.include_negative:
             # generate 1 and -1 randomly of size param

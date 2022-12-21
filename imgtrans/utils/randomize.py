@@ -1,6 +1,6 @@
 
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import List, Union
 from dataclasses import dataclass
 
 from imgtrans.utils.type_utils import is_array_like
@@ -11,18 +11,18 @@ class Interval:
     """
     A class representing an interval.
     """
-    low: float
-    high: float
+    lower: float
+    upper: float
 
     def __post_init__(self):
-        assert self.low <= self.high, \
-            f"low must be less than or equal to high, got {self.low} and {self.high}"
+        assert self.lower <= self.upper, \
+            f"lower must be less than or equal to upper, got {self.lower} and {self.upper}"
 
     def __contains__(self, item):
-        return self.low <= item <= self.high
+        return self.lower <= item <= self.upper
 
     def __repr__(self):
-        return f"Interval(low={self.low}, high={self.high})"
+        return f"Interval(lower={self.lower}, upper={self.upper})"
 
 
 class RandomFromInterval(ABC):
@@ -65,12 +65,28 @@ class RandomFromInterval(ABC):
             # if other array like
             else:
                 return [Interval(0.0, p) if not is_array_like(p) else Interval(*p) for p in param]
+
+    
+    def _construct_interval(self, 
+            intervals: Union[Interval, tuple, List[Union[Interval, tuple]]]) \
+            -> Union[Interval, List[Interval]]:
+        
+        # contruct if not Interval
+        if isinstance(intervals, tuple):
+            intervals = Interval(*intervals)
+        if isinstance(intervals, list):
+            intervals = [Interval(*i) if isinstance(i, tuple) else i for i in intervals]
+        # assert Interval or List of Interval
+        assert isinstance(intervals, Interval) or isinstance(intervals, list) and all([isinstance(i, Interval) for i in intervals]), \
+            "intervals must be Interval or List of Interval"
+        return intervals
+    
             
-            
-    def sample(self, interval: Interval, nbatch=None):
+    def sample(self, intervals: Interval, nbatch=None):
         """
         Remember self.include_negative
         """
+        intervals = self._construct_interval(intervals)
         return 0.0
     
         
@@ -93,17 +109,6 @@ class RandomFromInterval(ABC):
             param = param * dim
         return self.sample(param, nbatch)
         
-        
-        
-        
-class TransformWithRandom(ABC):
-    """
-    An abstract class for all transformation classes,
-    Used to sample random parameters for transformations.
-    """
-    
-    def __init__(self) -> None:
-        super().__init__()
     
     
         

@@ -1,7 +1,7 @@
 from typing import Union, Sequence, Optional
 import torch
 from imgtrans.utils.misc import fall_back_tuple
-from .type_utils import convert_tenor_dtype, convert_to_dst_type
+from ....imgtrans.torch.utils.type_utils import convert_tenor_dtype, convert_to_dst_type
 
 
 class CenterSpatialCrop:
