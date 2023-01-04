@@ -73,10 +73,10 @@ class GuassianFilter(nn.Module):
         # reshape x to (N, C, H, W, (D))
         batch_dims = x.shape[:-self.ndim - 1]
         x_shape = x.shape
-        if len(batch_dims) == 0:
+        if batch_dims.numel() == 0: # number of elements is zero
             batch_dims = [1]
         else:
-            batch_dims = torch.prod(torch.tensor(batch_dims)).tolist()
+            batch_dims = [torch.prod(torch.tensor(batch_dims)).item()]
         x = x.reshape(*batch_dims, *x.shape[-self.ndim - 1:])
         
         if self.ndim == 2:

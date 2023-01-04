@@ -8,7 +8,7 @@ from imgtrans.torch.utils.grid_utils import create_grid, resample
 from imgtrans.torch.utils.randomize import RandomFromIntervalTorch
 from imgtrans.torch.utils.type_utils import (convert_tenor_dtype,
                                              convert_to_dst_type)
-from imgtrans.utils.aff_mtx import (_create_rotate, _create_scale,
+from imgtrans.utils.affine_matrix import (_create_rotate, _create_scale,
                                     _create_shear, _create_translate)
 
 
@@ -26,21 +26,21 @@ class AffineKeyPoints(torch.nn.Module):
         """
         pass
 
-    def forward(self, kps, aff_mtx):
+    def forward(self, kps: torch.Tensor, affine_matrix: torch.Tensor):
         """
         Args:
             kps = ((*batch_size), nkps (like channel), ndim)
-            aff_mtx = ((*batch_size), ndim(+1), ndim+1)
+            affine_matrix = ((*batch_size), ndim(+1), ndim+1)
         """
         
         # initialize some parameters
         batch_size, nkps, ndim = kps.shape[:-2], kps.shape[-2], kps.shape[-1]
         device = kps.device
-        # assert aff_mtx's shape is correct
-        assert aff_mtx.shape[-2] in [ndim, ndim+1] and aff_mtx.shape[-1] == ndim + 1, \
-            "affine matrix shape is incorrect, should be (*batch_size, ndim+1, ndim+1), but got {}".format(aff_mtx.shape)
-        assert aff_mtx.shape[:-2] == batch_size, \
-            f"affine matrix shape is incorrect, batch_size should be {batch_size}, but got {aff_mtx.shape[:-2]}"
+        # assert affine_matrix's shape is correct
+        assert affine_matrix.shape[-2] in [ndim, ndim+1] and affine_matrix.shape[-1] == ndim + 1, \
+            "affine matrix shape is incorrect, should be (*batch_size, ndim+1, ndim+1), but got {}".format(affine_matrix.shape)
+        assert affine_matrix.shape[:-2] == batch_size, \
+            f"affine matrix shape is incorrect, batch_size should be {batch_size}, but got {affine_matrix.shape[:-2]}"
         
         # convert kps to shape (B, ndim, nkps)
         kps = kps.view(-1, nkps, ndim).permute(0, 2, 1)
@@ -54,7 +54,7 @@ class AffineKeyPoints(torch.nn.Module):
         kps_copy = kps.clone()
         ones = torch.ones(B, 1, nkps).to(device)
         kps_copy = torch.cat([kps_copy, ones], 1)
-        result_kps = torch.bmm(aff_mtx[:, :ndim, :], kps_copy)
+        result_kps = torch.bmm(affine_matrix[:, :ndim, :], kps_copy)
         
         # if 2D, needs to flip the x and y axis back
         if ndim == 2:
@@ -150,29 +150,29 @@ class AffineMatrix:
             translate = self.rand_sampler.get_randparams(translate, nbatch, self.ndim)
             shear = self.rand_sampler.get_randparams(shear, nbatch, self.ndim)
         
-        # affine = ((nbatch), ndim+1, ndim+1)
+        # affine_matrix = ((nbatch), ndim+1, ndim+1)
         if nbatch is None:
-            affine = torch.eye(self.ndim + 1)
+            affine_matrix = torch.eye(self.ndim + 1)
             if rotate:
-                affine = affine @ create_rotate(self.ndim, rotate)
+                affine_matrix = affine_matrix @ create_rotate(self.ndim, rotate)
             if shear:
-                affine = affine @ create_shear(self.ndim, shear)
+                affine_matrix = affine_matrix @ create_shear(self.ndim, shear)
             if translate:
-                affine = affine @ create_translate(self.ndim, translate)
+                affine_matrix = affine_matrix @ create_translate(self.ndim, translate)
             if scale:
-                affine = affine @ create_scale(self.ndim, scale)
+                affine_matrix = affine_matrix @ create_scale(self.ndim, scale)
         else:
-            affine = torch.eye(self.ndim + 1)[None].repeat(nbatch, 1, 1)
+            affine_matrix = torch.eye(self.ndim + 1)[None].repeat(nbatch, 1, 1)
             if rotate:
-                affine = affine @ create_rotate(self.ndim, rotate)[:, None]
+                affine_matrix = affine_matrix @ create_rotate(self.ndim, rotate)[:, None]
             if shear:
-                affine = affine @ create_shear(self.ndim, shear)[:, None]
+                affine_matrix = affine_matrix @ create_shear(self.ndim, shear)[:, None]
             if translate:
-                affine = affine @ create_translate(self.ndim, translate)[:, None]
+                affine_matrix = affine_matrix @ create_translate(self.ndim, translate)[:, None]
             if scale:
-                affine = affine @ create_scale(self.ndim, scale)[:, None]
+                affine_matrix = affine_matrix @ create_scale(self.ndim, scale)[:, None]
 
-        return affine
+        return affine_matrix
 
 def create_rotate(
     spatial_dims: int,
